@@ -7,9 +7,17 @@
   },
   "apis": {
     "note": "http://192.168.1.100:8892/api/note",
-    "recipe": "http://192.168.1.100:8890/api/recipe"
+    "recipe": "http://192.168.1.100:8889/api/recipe"
   },
   "home": {
     "title": "My Home Dashboard"
+  },
+  "tapo": {
+    "username": "your-tapo-email@example.com",
+    "password": "your-tapo-password"
+  },
+  "devices": {
+    "living_room_lamp": "192.168.1.100",
+    "bedroom_light": "192.168.1.101"
   }
 }
