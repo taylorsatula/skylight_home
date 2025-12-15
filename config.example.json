@@ -1,0 +1,15 @@
+{
+  "weather": {
+    "latitude": 40.7128,
+    "longitude": -74.0060,
+    "location": "New York",
+    "timezone": "America/New_York"
+  },
+  "apis": {
+    "note": "http://192.168.1.100:8892/api/note",
+    "recipe": "http://192.168.1.100:8890/api/recipe"
+  },
+  "home": {
+    "title": "My Home Dashboard"
+  }
+}

@@ -1,0 +1,9 @@
+# Config with sensitive data
+config.json
+
+# macOS
+.DS_Store
+
+# APK files
+*.apk
+*.xapk
