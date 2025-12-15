@@ -950,6 +950,75 @@
     });
   </script>
 
+  <!-- NOTIFICATION CENTER WIDGET -->
+  <div class="demo-section">
+    <div class="demo-label">Notification Center</div>
+    <div class="demo-row" style="gap: 24px;">
+      <!-- Urgent State -->
+      <div class="widget notify-panel notify-panel--urgent" style="width: 360px;">
+        <div class="notify-panel__header">
+          <div class="notify-panel__status">
+            <div class="notify-panel__dot notify-panel__dot--pulse"></div>
+            <span class="notify-panel__status-text">Action Required</span>
+          </div>
+          <span class="notify-panel__timestamp">Updated just now</span>
+        </div>
+        <div class="notify-panel__hero">
+          <svg class="icon icon--2xl"><use href="#icon-alert"/></svg>
+          <div class="notify-panel__hero-text">
+            <div class="notify-panel__hero-title">Garbage Day Tomorrow</div>
+            <div class="notify-panel__hero-subtitle">Recycling & Trash pickup</div>
+          </div>
+        </div>
+        <div class="notify-panel__list">
+          <div class="notify-panel__item">
+            <svg class="icon icon--sm"><use href="#icon-alert"/></svg>
+            <span>Storm Watch until 8 PM</span>
+          </div>
+        </div>
+        <div class="notify-panel__actions">
+          <button class="btn">Dismiss All</button>
+          <button class="btn btn--primary">View Details</button>
+        </div>
+      </div>
+      <!-- Normal State -->
+      <div class="widget notify-panel notify-panel--normal" style="width: 360px;">
+        <div class="notify-panel__header">
+          <div class="notify-panel__status">
+            <div class="notify-panel__dot"></div>
+            <span class="notify-panel__status-text">1 Notice</span>
+          </div>
+          <span class="notify-panel__timestamp">Updated 5 min ago</span>
+        </div>
+        <div class="notify-panel__hero notify-panel__hero--compact">
+          <svg class="icon icon--xl"><use href="#icon-bolt"/></svg>
+          <div class="notify-panel__hero-text">
+            <div class="notify-panel__hero-title">Package Arriving</div>
+            <div class="notify-panel__hero-subtitle">Amazon - Today by 8 PM</div>
+          </div>
+        </div>
+        <div class="notify-panel__actions">
+          <button class="btn">Dismiss</button>
+        </div>
+      </div>
+      <!-- Calm State -->
+      <div class="widget notify-panel notify-panel--calm" style="width: 360px;">
+        <div class="notify-panel__header">
+          <div class="notify-panel__status">
+            <div class="notify-panel__dot"></div>
+            <span class="notify-panel__status-text">All Systems Normal</span>
+          </div>
+          <span class="notify-panel__timestamp">Updated just now</span>
+        </div>
+        <div class="notify-panel__calm-state">
+          <svg class="icon icon--2xl"><use href="#icon-check-circle"/></svg>
+          <div class="notify-panel__calm-text">No alerts or reminders</div>
+          <div class="notify-panel__calm-subtext">Enjoy your day</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- WEATHER ICONS -->
   <div class="demo-section">
     <div class="demo-label">Weather Icons</div>

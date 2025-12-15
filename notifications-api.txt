@@ -1,0 +1,102 @@
+NOTIFICATIONS API REFERENCE
+===========================
+
+Base URL: http://192.168.1.137:8889/api/notifications
+
+
+GET ENDPOINTS
+-------------
+
+GET /api/notifications
+  Returns active notifications (one-time + triggered recurring)
+
+GET /api/notifications/all
+  Returns raw data including all recurring rules
+
+
+POST ENDPOINTS
+--------------
+
+POST /api/notifications
+  Add a one-time notification
+
+  Body:
+  {
+    "title": "Package Delivered",
+    "message": "Amazon at front door",      // optional
+    "priority": "normal",                   // urgent, normal, info
+    "icon": "alert",                        // alert, bolt, star, clock, check-circle
+    "expires_hours": 24                     // optional, auto-expire after N hours
+  }
+
+  Example (curl):
+  curl -X POST http://192.168.1.137:8889/api/notifications \
+    -H "Content-Type: application/json" \
+    -d '{"title":"Package Delivered","message":"Amazon at front door","priority":"normal","expires_hours":24}'
+
+
+POST /api/notifications/recurring
+  Add a recurring reminder
+
+  Body:
+  {
+    "id": "garbage",                        // optional, auto-generated if not provided
+    "title": "Garbage Day Tomorrow",
+    "message": "Recycling & Trash pickup",  // optional
+    "priority": "urgent",                   // urgent, normal, info
+    "icon": "alert",
+    "rule": {
+      "weekday": 1,                         // 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+      "hour": 7,                            // Hour of the event (24h format)
+      "show_before_hours": 18               // Start showing N hours before event
+    }
+  }
+
+  Alternative rule (monthly):
+  {
+    "rule": {
+      "day_of_month": 15,                   // 1-31
+      "hour": 9,
+      "show_before_hours": 24
+    }
+  }
+
+  Example (curl):
+  curl -X POST http://192.168.1.137:8889/api/notifications/recurring \
+    -H "Content-Type: application/json" \
+    -d '{"id":"garbage","title":"Garbage Day Tomorrow","message":"Recycling & Trash pickup","priority":"urgent","rule":{"weekday":1,"hour":7,"show_before_hours":18}}'
+
+
+DELETE ENDPOINTS
+----------------
+
+DELETE /api/notifications/{id}
+  Delete a notification by ID (works for both one-time and recurring)
+
+  Example (curl):
+  curl -X DELETE http://192.168.1.137:8889/api/notifications/garbage
+
+
+iOS SHORTCUT EXAMPLES
+---------------------
+
+Quick Notification (expires in 4 hours):
+  URL: http://192.168.1.137:8889/api/notifications
+  Method: POST
+  Body: {"title":"Remember!","message":"Check the oven","priority":"urgent","expires_hours":4}
+
+Storm Warning:
+  URL: http://192.168.1.137:8889/api/notifications
+  Method: POST
+  Body: {"title":"Storm Watch","message":"Until 8 PM","priority":"urgent","icon":"alert","expires_hours":6}
+
+
+WEEKDAY REFERENCE
+-----------------
+0 = Monday
+1 = Tuesday
+2 = Wednesday
+3 = Thursday
+4 = Friday
+5 = Saturday
+6 = Sunday

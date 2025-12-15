@@ -73,7 +73,7 @@
 
     .bottom-row {
       display: grid;
-      grid-template-columns: 2fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
       gap: var(--spacing-lg);
       flex: 1;
       min-height: 0;
@@ -316,11 +316,31 @@
       </div>
     </div>
 
-    <!-- Bottom row: Radar, Recipe, Light tiles -->
+    <!-- Bottom row: Shipping, Placeholder, Recipe, Light tiles -->
     <div class="bottom-row">
-      <!-- Radar Frame -->
-      <div class="radar-frame">
-        <img src="https://radar.weather.gov/ridge/standard/KHTX_loop.gif" alt="Alabama Weather Radar"/>
+      <!-- Shipping Widget -->
+      <div class="widget" id="shipping-widget" style="padding: 0; overflow: hidden;">
+        <!-- List View -->
+        <div id="shipping-list-view">
+          <div class="package-list__header">
+            <span class="package-list__title">Incoming Packages</span>
+            <span class="package-list__count" id="shipping-count">0 active</span>
+          </div>
+          <div id="shipping-list" style="overflow-y: auto; max-height: calc(100% - 48px);"></div>
+        </div>
+        <!-- Detail View (hidden by default) -->
+        <div id="shipping-detail-view" style="display: none; height: 100%; overflow-y: auto;">
+          <div class="package-list__header" style="cursor: pointer;" id="shipping-back-btn">
+            <svg class="icon icon--sm" style="color: var(--text-muted); transform: rotate(180deg); margin-right: 8px;"><use href="#icon-chevron"/></svg>
+            <span class="package-list__title">Back</span>
+          </div>
+          <div id="shipping-detail-content" style="padding: 16px;"></div>
+        </div>
+      </div>
+
+      <!-- Notifications Widget -->
+      <div class="widget notify-panel" id="notifications-widget">
+        <!-- Content populated by JS -->
       </div>
 
       <!-- Recipe Widget -->
@@ -1078,6 +1098,351 @@
     }
     updateDate();
     setInterval(updateDate, 3600000);
+  </script>
+
+  <script>
+    // Shipping widget state
+    let shipmentsCache = [];
+
+    function getAftershipApiUrl() {
+      return CONFIG?.apis?.aftership || 'https://api.aftership.com/v4/trackings';
+    }
+
+    function getAftershipApiKey() {
+      return CONFIG?.apis?.aftership_key || '';
+    }
+
+    // Map AfterShip status tags to badge classes
+    function mapStatusToBadge(tag) {
+      const statusMap = {
+        'Pending': { class: 'badge--pending', label: 'Pending' },
+        'InfoReceived': { class: 'badge--info', label: 'Label Created' },
+        'InTransit': { class: 'badge--warning', label: 'In Transit' },
+        'OutForDelivery': { class: 'badge--alert', label: 'Out for Delivery' },
+        'AttemptFail': { class: 'badge--error', label: 'Failed Attempt' },
+        'Delivered': { class: 'badge--success', label: 'Delivered' },
+        'AvailableForPickup': { class: 'badge--info', label: 'Ready for Pickup' },
+        'Exception': { class: 'badge--error', label: 'Exception' },
+        'Expired': { class: 'badge--error', label: 'Expired' }
+      };
+      return statusMap[tag] || { class: 'badge--pending', label: tag };
+    }
+
+    // Map carrier slug to CSS class
+    function getCarrierClass(slug) {
+      const carrierMap = {
+        'ups': 'package__carrier--ups',
+        'fedex': 'package__carrier--fedex',
+        'usps': 'package__carrier--usps',
+        'dhl': 'package__carrier--dhl',
+        'amazon': 'package__carrier--amazon',
+        'amazon-fba-us': 'package__carrier--amazon',
+        'lasership': 'package__carrier--other',
+        'ontrac': 'package__carrier--other'
+      };
+      return carrierMap[slug] || 'package__carrier--other';
+    }
+
+    // Get carrier display name
+    function getCarrierLabel(slug) {
+      const labelMap = {
+        'ups': 'UPS',
+        'fedex': 'FDX',
+        'usps': 'USPS',
+        'dhl': 'DHL',
+        'amazon': 'AMZ',
+        'amazon-fba-us': 'AMZ',
+        'lasership': 'LS',
+        'ontrac': 'OT'
+      };
+      return labelMap[slug] || 'PKG';
+    }
+
+    // Format ETA date
+    function formatEta(expectedDelivery) {
+      if (!expectedDelivery) return '--';
+      const date = new Date(expectedDelivery);
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      if (date.toDateString() === today.toDateString()) return 'Today';
+      if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+      return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+
+    // Fetch shipments from AfterShip
+    async function fetchShipments() {
+      const apiKey = getAftershipApiKey();
+      if (!apiKey || apiKey === 'YOUR_AFTERSHIP_API_KEY') {
+        renderPackageList([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(getAftershipApiUrl(), {
+          headers: { 'aftership-api-key': apiKey }
+        });
+        if (!response.ok) throw new Error('Failed to fetch shipments');
+        const data = await response.json();
+        shipmentsCache = data.data?.trackings || [];
+        renderPackageList(shipmentsCache);
+      } catch (error) {
+        console.error('Error fetching shipments:', error);
+        renderPackageList([]);
+      }
+    }
+
+    // Render package list view
+    function renderPackageList(trackings) {
+      const listEl = document.getElementById('shipping-list');
+      const countEl = document.getElementById('shipping-count');
+
+      // Filter to active (non-delivered) packages
+      const active = trackings.filter(t => t.tag !== 'Delivered');
+      countEl.textContent = `${active.length} active`;
+
+      if (active.length === 0) {
+        listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No packages to track</div>';
+        return;
+      }
+
+      listEl.innerHTML = active.map((tracking, index) => {
+        const status = mapStatusToBadge(tracking.tag);
+        const eta = formatEta(tracking.expected_delivery);
+        const isToday = eta === 'Today';
+
+        return `
+          <div class="package-list__item" data-tracking-index="${index}" style="cursor: pointer;">
+            <div class="package-list__item-carrier ${getCarrierClass(tracking.slug)}">${getCarrierLabel(tracking.slug)}</div>
+            <div class="package-list__item-info">
+              <div class="package-list__item-title">${tracking.title || 'Package'}</div>
+              <div class="package-list__item-status" style="${tracking.tag === 'OutForDelivery' ? 'color: var(--status-out);' : ''}">${status.label}</div>
+            </div>
+            <div class="package-list__item-eta ${isToday ? 'package-list__item-eta--today' : ''}">${eta}</div>
+            <svg class="icon icon--sm" style="color: var(--text-muted);"><use href="#icon-chevron"/></svg>
+          </div>
+        `;
+      }).join('');
+
+      // Add click handlers
+      listEl.querySelectorAll('.package-list__item').forEach(item => {
+        item.addEventListener('click', () => {
+          const index = parseInt(item.dataset.trackingIndex);
+          showPackageDetail(active[index]);
+        });
+      });
+    }
+
+    // Show package detail view
+    function showPackageDetail(tracking) {
+      const listView = document.getElementById('shipping-list-view');
+      const detailView = document.getElementById('shipping-detail-view');
+      const detailContent = document.getElementById('shipping-detail-content');
+
+      const status = mapStatusToBadge(tracking.tag);
+      const checkpoints = tracking.checkpoints || [];
+
+      detailContent.innerHTML = `
+        <div class="package__header" style="margin-bottom: 16px;">
+          <div class="package__carrier ${getCarrierClass(tracking.slug)}">${getCarrierLabel(tracking.slug)}</div>
+          <div class="package__info">
+            <div class="package__title">${tracking.title || 'Package'}</div>
+            <div class="package__subtitle">${tracking.slug?.toUpperCase() || 'Carrier'}</div>
+            <div class="package__tracking">${tracking.tracking_number}</div>
+          </div>
+          <div class="badge ${status.class}"><span class="badge__dot"></span>${status.label}</div>
+        </div>
+        ${tracking.expected_delivery ? `
+          <div style="margin-bottom: 16px; padding: 12px; background: var(--surface-inset); border-radius: var(--radius-lg);">
+            <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Expected Delivery</div>
+            <div style="font-size: 18px; font-weight: 600;">${formatEta(tracking.expected_delivery)}</div>
+          </div>
+        ` : ''}
+        <div class="package__timeline">
+          ${checkpoints.slice(0, 5).map((cp, i) => {
+            const dotClass = i === 0 ? 'package__timeline-dot--current' : 'package__timeline-dot--complete';
+            const date = new Date(cp.checkpoint_time);
+            const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return `
+              <div class="package__timeline-item">
+                <div class="package__timeline-dot ${dotClass}"></div>
+                <div class="package__timeline-content">
+                  <div class="package__timeline-title">${cp.message || cp.tag}</div>
+                  ${cp.location ? `<div class="package__timeline-location">${cp.location}</div>` : ''}
+                </div>
+                <div class="package__timeline-time">${timeStr}<br>${dateStr}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+
+      listView.style.display = 'none';
+      detailView.style.display = 'block';
+    }
+
+    // Show package list view (back button)
+    function showPackageList() {
+      document.getElementById('shipping-list-view').style.display = 'block';
+      document.getElementById('shipping-detail-view').style.display = 'none';
+    }
+
+    // Initialize shipping widget
+    document.addEventListener('DOMContentLoaded', () => {
+      // Back button handler
+      document.getElementById('shipping-back-btn').addEventListener('click', showPackageList);
+
+      // Fetch shipments on load and every 5 minutes
+      setTimeout(() => {
+        fetchShipments();
+        setInterval(fetchShipments, 300000);
+      }, 100); // Small delay to ensure CONFIG is loaded
+    });
+  </script>
+
+  <script>
+    // Notifications widget
+    let notificationsCache = [];
+
+    function getNotificationsApiUrl() {
+      return CONFIG?.apis?.notifications || '';
+    }
+
+    // Map icon names to SVG references
+    function getNotificationIcon(icon) {
+      const iconMap = {
+        'alert': '#icon-alert',
+        'bolt': '#icon-bolt',
+        'star': '#icon-star',
+        'clock': '#icon-clock',
+        'check-circle': '#icon-check-circle'
+      };
+      return iconMap[icon] || '#icon-alert';
+    }
+
+    // Get priority class for styling
+    function getPriorityClass(priority) {
+      const classMap = {
+        'urgent': 'notify-panel--urgent',
+        'normal': 'notify-panel--normal',
+        'info': 'notify-panel--calm'
+      };
+      return classMap[priority] || 'notify-panel--normal';
+    }
+
+    // Fetch notifications
+    async function fetchNotifications() {
+      const apiUrl = getNotificationsApiUrl();
+      if (!apiUrl) {
+        renderNotifications([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(apiUrl);
+        if (!response.ok) throw new Error('Failed to fetch notifications');
+        notificationsCache = await response.json();
+        renderNotifications(notificationsCache);
+      } catch (error) {
+        console.error('Error fetching notifications:', error);
+        renderNotifications([]);
+      }
+    }
+
+    // Render notifications widget
+    function renderNotifications(notifications) {
+      const widget = document.getElementById('notifications-widget');
+
+      // Reset classes
+      widget.className = 'widget notify-panel';
+
+      if (notifications.length === 0) {
+        // Calm state - no notifications
+        widget.classList.add('notify-panel--calm');
+        widget.innerHTML = `
+          <div class="notify-panel__header">
+            <div class="notify-panel__status">
+              <div class="notify-panel__dot"></div>
+              <span class="notify-panel__status-text">All Clear</span>
+            </div>
+            <span class="notify-panel__timestamp">Updated just now</span>
+          </div>
+          <div class="notify-panel__calm-state">
+            <svg class="icon icon--2xl"><use href="#icon-check-circle"/></svg>
+            <div class="notify-panel__calm-text">No alerts or reminders</div>
+            <div class="notify-panel__calm-subtext">Enjoy your day</div>
+          </div>
+        `;
+        return;
+      }
+
+      // Has notifications
+      const hasUrgent = notifications.some(n => n.priority === 'urgent');
+      widget.classList.add(hasUrgent ? 'notify-panel--urgent' : 'notify-panel--normal');
+      const statusText = hasUrgent ? 'Action Required' : `${notifications.length} Notice${notifications.length > 1 ? 's' : ''}`;
+      const dotClass = hasUrgent ? 'notify-panel__dot--pulse' : '';
+
+      // First notification is the hero
+      const hero = notifications[0];
+      const others = notifications.slice(1, 4); // Show up to 3 more
+
+      widget.innerHTML = `
+        <div class="notify-panel__header">
+          <div class="notify-panel__status">
+            <div class="notify-panel__dot ${dotClass}"></div>
+            <span class="notify-panel__status-text">${statusText}</span>
+          </div>
+          <span class="notify-panel__timestamp">Updated just now</span>
+        </div>
+        <div class="notify-panel__hero${others.length === 0 ? '' : ' notify-panel__hero--compact'}">
+          <svg class="icon icon--${others.length === 0 ? '2xl' : 'xl'}"><use href="${getNotificationIcon(hero.icon)}"/></svg>
+          <div class="notify-panel__hero-text">
+            <div class="notify-panel__hero-title">${hero.title}</div>
+            ${hero.message ? `<div class="notify-panel__hero-subtitle">${hero.message}</div>` : ''}
+          </div>
+        </div>
+        ${others.length > 0 ? `
+          <div class="notify-panel__list">
+            ${others.map(n => `
+              <div class="notify-panel__item">
+                <svg class="icon icon--sm"><use href="${getNotificationIcon(n.icon)}"/></svg>
+                <span>${n.title}${n.message ? ': ' + n.message : ''}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        <div class="notify-panel__actions">
+          <button class="btn" onclick="dismissAllNotifications()">Dismiss All</button>
+        </div>
+      `;
+    }
+
+    // Dismiss all non-recurring notifications
+    async function dismissAllNotifications() {
+      const apiUrl = getNotificationsApiUrl();
+      if (!apiUrl) return;
+
+      for (const notif of notificationsCache) {
+        if (!notif.recurring) {
+          try {
+            await fetch(`${apiUrl}/${notif.id}`, { method: 'DELETE' });
+          } catch (e) {
+            console.error('Error dismissing notification:', e);
+          }
+        }
+      }
+      fetchNotifications();
+    }
+
+    // Initialize notifications widget
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+        fetchNotifications();
+        setInterval(fetchNotifications, 60000); // Refresh every minute
+      }, 200);
+    });
   </script>
 
 </body>

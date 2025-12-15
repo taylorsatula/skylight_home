@@ -150,6 +150,178 @@ async def control_device(device_id, action, value=None):
 RECIPE_CACHE_FILE = '/tmp/nyt_recipe_cache.json'
 RECIPE_UPDATE_INTERVAL = 3600  # 1 hour
 
+
+# =============================================================================
+# =============================================================================
+#
+#   NOTIFICATIONS SERVICE
+#   Persistent notifications with recurring reminder support
+#
+# =============================================================================
+# =============================================================================
+
+from datetime import datetime, timedelta
+import uuid
+
+NOTIFICATIONS_FILE = Path(__file__).parent / 'notifications.json'
+
+def load_notifications():
+    """Load notifications from JSON file"""
+    try:
+        with open(NOTIFICATIONS_FILE, 'r') as f:
+            return json.load(f)
+    except:
+        return {'notifications': [], 'recurring': []}
+
+def save_notifications(data):
+    """Save notifications to JSON file"""
+    try:
+        with open(NOTIFICATIONS_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving notifications: {e}")
+
+def get_active_notifications():
+    """Get all active notifications including triggered recurring ones"""
+    data = load_notifications()
+    now = datetime.now()
+    active = []
+
+    # One-time notifications that haven't expired
+    for notif in data.get('notifications', []):
+        expires = notif.get('expires')
+        if expires:
+            exp_dt = datetime.fromisoformat(expires)
+            if exp_dt < now:
+                continue
+        active.append(notif)
+
+    # Check recurring reminders
+    for recur in data.get('recurring', []):
+        triggered = check_recurring_trigger(recur, now)
+        if triggered:
+            active.append(triggered)
+
+    # Sort by priority (urgent first)
+    priority_order = {'urgent': 0, 'normal': 1, 'info': 2}
+    active.sort(key=lambda x: priority_order.get(x.get('priority', 'normal'), 1))
+
+    return active
+
+def check_recurring_trigger(recur, now):
+    """Check if a recurring reminder should show now"""
+    rule = recur.get('rule', {})
+    show_before = rule.get('show_before_hours', 0)
+
+    # Calculate target time
+    if 'weekday' in rule:
+        # Weekly recurring (0=Monday, 6=Sunday)
+        target_weekday = rule['weekday']
+        target_hour = rule.get('hour', 8)  # Default 8 AM
+
+        # Find next occurrence of this weekday
+        days_until = (target_weekday - now.weekday()) % 7
+        if days_until == 0 and now.hour >= target_hour:
+            days_until = 7  # Already passed today
+
+        target_dt = now.replace(hour=target_hour, minute=0, second=0, microsecond=0) + timedelta(days=days_until)
+        show_from = target_dt - timedelta(hours=show_before)
+
+        # Check if we're in the show window
+        if show_from <= now < target_dt:
+            return {
+                'id': recur['id'],
+                'title': recur.get('title', 'Reminder'),
+                'message': recur.get('message', ''),
+                'priority': recur.get('priority', 'normal'),
+                'icon': recur.get('icon', 'alert'),
+                'recurring': True,
+                'target_time': target_dt.isoformat()
+            }
+
+    elif 'day_of_month' in rule:
+        # Monthly recurring
+        target_day = rule['day_of_month']
+        target_hour = rule.get('hour', 8)
+
+        # This month or next?
+        if now.day > target_day or (now.day == target_day and now.hour >= target_hour):
+            # Next month
+            if now.month == 12:
+                target_dt = now.replace(year=now.year + 1, month=1, day=target_day, hour=target_hour, minute=0, second=0, microsecond=0)
+            else:
+                target_dt = now.replace(month=now.month + 1, day=target_day, hour=target_hour, minute=0, second=0, microsecond=0)
+        else:
+            target_dt = now.replace(day=target_day, hour=target_hour, minute=0, second=0, microsecond=0)
+
+        show_from = target_dt - timedelta(hours=show_before)
+
+        if show_from <= now < target_dt:
+            return {
+                'id': recur['id'],
+                'title': recur.get('title', 'Reminder'),
+                'message': recur.get('message', ''),
+                'priority': recur.get('priority', 'normal'),
+                'icon': recur.get('icon', 'alert'),
+                'recurring': True,
+                'target_time': target_dt.isoformat()
+            }
+
+    return None
+
+def add_notification(notif_data):
+    """Add a new notification"""
+    data = load_notifications()
+
+    notif = {
+        'id': notif_data.get('id', str(uuid.uuid4())[:8]),
+        'title': notif_data.get('title', 'Notification'),
+        'message': notif_data.get('message', ''),
+        'priority': notif_data.get('priority', 'normal'),  # urgent, normal, info
+        'icon': notif_data.get('icon', 'alert'),
+        'created': datetime.now().isoformat()
+    }
+
+    # Handle expiration
+    if notif_data.get('expires_hours'):
+        notif['expires'] = (datetime.now() + timedelta(hours=notif_data['expires_hours'])).isoformat()
+    elif notif_data.get('expires'):
+        notif['expires'] = notif_data['expires']
+
+    data['notifications'].append(notif)
+    save_notifications(data)
+    return notif
+
+def add_recurring(recur_data):
+    """Add a recurring reminder"""
+    data = load_notifications()
+
+    recur = {
+        'id': recur_data.get('id', str(uuid.uuid4())[:8]),
+        'title': recur_data.get('title', 'Reminder'),
+        'message': recur_data.get('message', ''),
+        'priority': recur_data.get('priority', 'normal'),
+        'icon': recur_data.get('icon', 'alert'),
+        'rule': recur_data.get('rule', {})
+    }
+
+    data['recurring'].append(recur)
+    save_notifications(data)
+    return recur
+
+def delete_notification(notif_id):
+    """Delete a notification by ID"""
+    data = load_notifications()
+
+    # Remove from one-time notifications
+    data['notifications'] = [n for n in data['notifications'] if n.get('id') != notif_id]
+
+    # Also check recurring (allow deleting recurring reminders)
+    data['recurring'] = [r for r in data['recurring'] if r.get('id') != notif_id]
+
+    save_notifications(data)
+    return {'deleted': notif_id}
+
 recipe_cache = {
     'title': 'Loading...',
     'image': '',
@@ -318,7 +490,7 @@ class SkylightHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
@@ -356,14 +528,27 @@ class SkylightHandler(BaseHTTPRequestHandler):
             self._send_json(recipe_cache)
 
         # ---------------------------------------------------------------------
+        # Notification endpoints
+        # ---------------------------------------------------------------------
+        elif self.path == '/api/notifications':
+            self._send_json(get_active_notifications())
+
+        elif self.path == '/api/notifications/all':
+            # Return raw data including recurring rules (for management)
+            self._send_json(load_notifications())
+
+        # ---------------------------------------------------------------------
         # Health check
         # ---------------------------------------------------------------------
         elif self.path == '/api/health':
+            notif_data = load_notifications()
             self._send_json({
                 'status': 'ok',
-                'services': ['devices', 'recipe'],
+                'services': ['devices', 'recipe', 'notifications'],
                 'devices_configured': len(get_device_config()),
-                'recipe_updated': recipe_cache.get('updated', 0)
+                'recipe_updated': recipe_cache.get('updated', 0),
+                'notifications_count': len(notif_data.get('notifications', [])),
+                'recurring_count': len(notif_data.get('recurring', []))
             })
 
         else:
@@ -390,6 +575,34 @@ class SkylightHandler(BaseHTTPRequestHandler):
             loop.close()
             self._send_json(result)
 
+        # ---------------------------------------------------------------------
+        # Notification endpoints
+        # ---------------------------------------------------------------------
+        elif self.path == '/api/notifications':
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode() if content_length else '{}'
+            data = json.loads(body) if body else {}
+            result = add_notification(data)
+            self._send_json(result)
+
+        elif self.path == '/api/notifications/recurring':
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode() if content_length else '{}'
+            data = json.loads(body) if body else {}
+            result = add_recurring(data)
+            self._send_json(result)
+
+        else:
+            self._send_json({'error': 'Not found'}, 404)
+
+    def do_DELETE(self):
+        # ---------------------------------------------------------------------
+        # Delete notification
+        # ---------------------------------------------------------------------
+        if self.path.startswith('/api/notifications/'):
+            notif_id = self.path.split('/')[-1]
+            result = delete_notification(notif_id)
+            self._send_json(result)
         else:
             self._send_json({'error': 'Not found'}, 404)
 
@@ -425,12 +638,17 @@ if __name__ == '__main__':
     print("=" * 60)
     print()
     print("Endpoints:")
-    print("  GET  /api/devices          - All device status")
-    print("  GET  /api/device/<id>      - Single device status")
+    print("  GET  /api/devices              - All device status")
+    print("  GET  /api/device/<id>          - Single device status")
     print("  POST /api/device/<id>/<action> - Control device")
-    print("  GET  /api/recipe           - Current recipe")
-    print("  GET  /api/recipe/refresh   - Force recipe refresh")
-    print("  GET  /api/health           - Service health check")
+    print("  GET  /api/recipe               - Current recipe")
+    print("  GET  /api/recipe/refresh       - Force recipe refresh")
+    print("  GET  /api/notifications        - Active notifications")
+    print("  GET  /api/notifications/all    - All notifications (incl. recurring rules)")
+    print("  POST /api/notifications        - Add notification")
+    print("  POST /api/notifications/recurring - Add recurring reminder")
+    print("  DEL  /api/notifications/<id>   - Delete notification")
+    print("  GET  /api/health               - Service health check")
     print()
 
     server = HTTPServer(('0.0.0.0', PORT), SkylightHandler)
