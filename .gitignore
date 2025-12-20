@@ -1,6 +1,10 @@
 # Config with sensitive data
 config.json
 
+# Runtime data
+notifications.json
+__pycache__/
+
 # macOS
 .DS_Store
 

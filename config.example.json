@@ -1,26 +1,108 @@
 {
+  "_comments": {
+    "calendar": "Get ICS URLs from Google Calendar: Settings → Calendar → Integrate calendar → Secret address in iCal format",
+    "weather_conditions": "Available: humidity, wind, precip, uv, feelsLike, visibility, pressure",
+    "device_icons": "Available: lightbulb, fan, lock, tv, homepod",
+    "device_types": "light (supports brightness) or switch (on/off only)"
+  },
+
+  "home": {
+    "title": "Home Dashboard"
+  },
+
+  "calendar": {
+    "icsUrls": [
+      "https://calendar.google.com/calendar/ical/your-calendar-id%40group.calendar.google.com/private-XXXXXX/basic.ics"
+    ],
+    "daysAhead": 14
+  },
+
   "weather": {
     "latitude": 40.7128,
     "longitude": -74.0060,
     "location": "New York",
     "timezone": "America/New_York"
   },
+
   "apis": {
-    "note": "http://192.168.1.100:8892/api/note",
-    "recipe": "http://192.168.1.100:8889/api/recipe",
+    "calendar": "http://localhost:8889/api/calendar",
+    "note": "http://localhost:8892/api/note",
+    "recipe": "http://localhost:8889/api/recipe",
     "aftership": "https://api.aftership.com/v4/trackings",
     "aftership_key": "YOUR_AFTERSHIP_API_KEY",
-    "notifications": "http://192.168.1.100:8889/api/notifications"
+    "notifications": "http://localhost:8889/api/notifications"
   },
-  "home": {
-    "title": "My Home Dashboard"
+
+  "homeAssistant": {
+    "url": "http://homeassistant.local:8123",
+    "token": "YOUR_HOME_ASSISTANT_LONG_LIVED_TOKEN"
   },
+
   "tapo": {
+    "_comment": "Credentials for Kasa/Tapo devices (used by skylight-service.py)",
     "username": "your-tapo-email@example.com",
-    "password": "your-tapo-password"
+    "password": "YOUR_TAPO_PASSWORD"
   },
+
   "devices": {
-    "living_room_lamp": "192.168.1.100",
-    "bedroom_light": "192.168.1.101"
+    "living_room_light": {
+      "entity_id": "light.living_room",
+      "name": "Living Room",
+      "type": "light",
+      "icon": "lightbulb"
+    },
+    "bedroom_light": {
+      "entity_id": "light.bedroom",
+      "name": "Bedroom",
+      "type": "light",
+      "icon": "lightbulb"
+    },
+    "ceiling_fan": {
+      "entity_id": "switch.ceiling_fan",
+      "name": "Ceiling Fan",
+      "type": "switch",
+      "icon": "fan"
+    },
+    "front_door": {
+      "entity_id": "lock.front_door",
+      "name": "Front Door",
+      "type": "switch",
+      "icon": "lock"
+    }
+  },
+
+  "layout": {
+    "topRow": {
+      "_comment": "Small device tiles, auto-sized at 200px each",
+      "tiles": [
+        { "type": "device", "deviceId": "living_room_light" },
+        { "type": "device", "deviceId": "bedroom_light" },
+        { "type": "device", "deviceId": "ceiling_fan" },
+        { "type": "device", "deviceId": "front_door" }
+      ]
+    },
+    "middleRow": {
+      "_comment": "Main content row, flex height. Use width: px or 1fr",
+      "tiles": [
+        { "type": "calendar", "width": "340px" },
+        {
+          "type": "weather",
+          "width": "400px",
+          "conditions": ["humidity", "wind", "precip"],
+          "forecastDays": 4
+        },
+        { "type": "photo", "src": "photo.jpeg", "width": "280px" },
+        { "type": "note", "width": "1fr" }
+      ]
+    },
+    "bottomRow": {
+      "_comment": "Fixed height row (280px). Widgets: shipping, notifications, recipe, deviceStack, placeholder",
+      "tiles": [
+        { "type": "shipping", "width": "1fr" },
+        { "type": "notifications", "width": "1fr" },
+        { "type": "recipe", "width": "1fr" },
+        { "type": "deviceStack", "width": "200px", "devices": ["living_room_light", "bedroom_light"] }
+      ]
+    }
   }
 }

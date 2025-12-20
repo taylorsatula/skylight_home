@@ -6,8 +6,10 @@ Runs on Pi: python3 skylight-service.py
 Combines:
 - Kasa/Tapo device control
 - NYT Cooking recipe scraping
+- Notifications with WebSocket push
 
 API available at http://localhost:8889
+WebSocket available at ws://localhost:8890
 """
 
 import asyncio
@@ -18,6 +20,73 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.request import urlopen, Request
 from pathlib import Path
+
+# =============================================================================
+# WEBSOCKET SERVER
+# =============================================================================
+
+try:
+    import websockets
+    WEBSOCKETS_AVAILABLE = True
+except ImportError:
+    WEBSOCKETS_AVAILABLE = False
+    print("[WebSocket] websockets module not installed. Run: pip install websockets")
+
+# Connected WebSocket clients
+ws_clients = set()
+
+async def ws_handler(websocket, path):
+    """Handle WebSocket connections"""
+    ws_clients.add(websocket)
+    print(f"[WebSocket] Client connected. Total: {len(ws_clients)}")
+    try:
+        # Send current state on connect
+        await websocket.send(json.dumps({
+            'type': 'notifications',
+            'data': get_active_notifications()
+        }))
+        # Keep connection alive
+        async for message in websocket:
+            # Handle incoming messages if needed
+            pass
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    finally:
+        ws_clients.discard(websocket)
+        print(f"[WebSocket] Client disconnected. Total: {len(ws_clients)}")
+
+def broadcast_notifications():
+    """Broadcast notification update to all connected clients"""
+    if not ws_clients:
+        return
+    message = json.dumps({
+        'type': 'notifications',
+        'data': get_active_notifications()
+    })
+    # Schedule broadcast in the websocket event loop
+    asyncio.run_coroutine_threadsafe(
+        _broadcast(message),
+        ws_loop
+    )
+
+async def _broadcast(message):
+    """Send message to all connected clients"""
+    if ws_clients:
+        await asyncio.gather(
+            *[client.send(message) for client in ws_clients],
+            return_exceptions=True
+        )
+
+def start_websocket_server():
+    """Start WebSocket server in background thread"""
+    global ws_loop
+    ws_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(ws_loop)
+
+    start_server = websockets.serve(ws_handler, "0.0.0.0", 8890)
+    ws_loop.run_until_complete(start_server)
+    print("[WebSocket] Server started on ws://0.0.0.0:8890")
+    ws_loop.run_forever()
 
 # =============================================================================
 # CONFIGURATION
@@ -35,6 +104,36 @@ def load_config():
         return {}
 
 CONFIG = load_config()
+
+def save_config(data):
+    """Save configuration to config.json"""
+    global CONFIG
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        CONFIG = data
+        print("[Config] Configuration saved successfully")
+        return True
+    except Exception as e:
+        print(f"[Config] Error saving config: {e}")
+        return False
+
+def reload_config():
+    """Reload configuration from disk"""
+    global CONFIG
+    CONFIG = load_config()
+    return CONFIG
+
+def broadcast_reload():
+    """Broadcast reload command to all connected WebSocket clients"""
+    if not ws_clients:
+        return
+    message = json.dumps({'type': 'reload'})
+    asyncio.run_coroutine_threadsafe(
+        _broadcast(message),
+        ws_loop
+    )
+    print("[Config] Broadcast reload to all clients")
 
 
 # =============================================================================
@@ -136,6 +235,157 @@ async def control_device(device_id, action, value=None):
         return await get_device_status(device_id)
     except Exception as e:
         return {"error": str(e)}
+
+
+# =============================================================================
+# =============================================================================
+#
+#   CALENDAR SERVICE
+#   ICS feed parser with CORS proxy
+#
+# =============================================================================
+# =============================================================================
+
+from datetime import datetime, timedelta
+import re
+
+CALENDAR_CACHE_FILE = '/tmp/calendar_cache.json'
+CALENDAR_UPDATE_INTERVAL = 21600  # 6 hours
+
+calendar_cache = {
+    'events': [],
+    'updated': 0
+}
+
+def parse_ics_datetime(dt_str):
+    """Parse ICS datetime (YYYYMMDD or YYYYMMDDTHHMMSSZ) to ISO string"""
+    if len(dt_str) == 8:
+        # All-day: YYYYMMDD
+        return f"{dt_str[:4]}-{dt_str[4:6]}-{dt_str[6:8]}"
+    else:
+        # Timed: YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ
+        year = dt_str[:4]
+        month = dt_str[4:6]
+        day = dt_str[6:8]
+        hour = dt_str[9:11]
+        minute = dt_str[11:13]
+        sec = dt_str[13:15]
+        return f"{year}-{month}-{day}T{hour}:{minute}:{sec}{'Z' if dt_str.endswith('Z') else ''}"
+
+def parse_ics(ics_text, days_ahead=14):
+    """Parse ICS/iCal format and return events within date range"""
+    events = []
+    now = datetime.now()
+    now = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    max_date = now + timedelta(days=days_ahead)
+
+    # Split into event blocks
+    event_blocks = ics_text.split('BEGIN:VEVENT')
+
+    for block in event_blocks[1:]:  # Skip first (before any VEVENT)
+        if 'END:VEVENT' not in block:
+            continue
+
+        event = {}
+
+        # Extract SUMMARY
+        summary_match = re.search(r'SUMMARY[^:]*:(.+)', block)
+        if summary_match:
+            event['summary'] = summary_match.group(1).strip().replace('\\,', ',').replace('\\n', ' ')
+
+        # Extract DTSTART
+        start_match = re.search(r'DTSTART[^:]*:(\d{8}(?:T\d{6}Z?)?)', block)
+        if start_match:
+            start_str = start_match.group(1)
+            if len(start_str) == 8:
+                event['start'] = {'date': parse_ics_datetime(start_str)}
+            else:
+                event['start'] = {'dateTime': parse_ics_datetime(start_str)}
+
+        # Extract DTEND
+        end_match = re.search(r'DTEND[^:]*:(\d{8}(?:T\d{6}Z?)?)', block)
+        if end_match:
+            end_str = end_match.group(1)
+            if len(end_str) == 8:
+                event['end'] = {'date': parse_ics_datetime(end_str)}
+            else:
+                event['end'] = {'dateTime': parse_ics_datetime(end_str)}
+
+        # Filter to date range
+        if 'start' in event:
+            event_date_str = event['start'].get('date') or event['start'].get('dateTime', '').split('T')[0]
+            try:
+                event_date = datetime.fromisoformat(event_date_str.replace('Z', '+00:00'))
+                event_date = event_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+                if now <= event_date <= max_date:
+                    events.append(event)
+            except:
+                pass
+
+    # Sort by start date/time
+    events.sort(key=lambda e: e['start'].get('date') or e['start'].get('dateTime'))
+    return events
+
+def fetch_calendar():
+    """Fetch and parse all ICS calendars from config"""
+    global calendar_cache
+
+    ics_urls = CONFIG.get('calendar', {}).get('icsUrls', [])
+    if not ics_urls:
+        print("[Calendar] No ICS URLs configured")
+        return
+
+    days_ahead = CONFIG.get('calendar', {}).get('daysAhead', 14)
+
+    all_events = []
+
+    for i, url in enumerate(ics_urls):
+        try:
+            print(f"[Calendar] Fetching calendar {i + 1}/{len(ics_urls)}...")
+            req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urlopen(req, timeout=10) as response:
+                ics_text = response.read().decode('utf-8')
+
+            events = parse_ics(ics_text, days_ahead)
+            all_events.extend(events)
+            print(f"[Calendar] Calendar {i + 1} has {len(events)} events in range")
+        except Exception as e:
+            print(f"[Calendar] Error fetching calendar {i + 1}: {e}")
+
+    # Sort merged events
+    all_events.sort(key=lambda e: e['start'].get('date') or e['start'].get('dateTime'))
+
+    calendar_cache = {
+        'events': all_events,
+        'updated': int(time.time())
+    }
+
+    save_calendar_cache()
+    print(f"[Calendar] Updated with {len(all_events)} total events")
+
+def save_calendar_cache():
+    """Save calendar cache to disk"""
+    try:
+        with open(CALENDAR_CACHE_FILE, 'w') as f:
+            json.dump(calendar_cache, f)
+    except Exception as e:
+        print(f"Error saving calendar cache: {e}")
+
+def load_calendar_cache():
+    """Load calendar cache from disk"""
+    global calendar_cache
+    try:
+        with open(CALENDAR_CACHE_FILE, 'r') as f:
+            calendar_cache = json.load(f)
+    except:
+        pass
+
+def calendar_update_loop():
+    """Background thread to update calendar periodically"""
+    while True:
+        fetch_calendar()
+        time.sleep(CALENDAR_UPDATE_INTERVAL)
 
 
 # =============================================================================
@@ -290,6 +540,7 @@ def add_notification(notif_data):
 
     data['notifications'].append(notif)
     save_notifications(data)
+    broadcast_notifications()
     return notif
 
 def add_recurring(recur_data):
@@ -307,6 +558,7 @@ def add_recurring(recur_data):
 
     data['recurring'].append(recur)
     save_notifications(data)
+    broadcast_notifications()
     return recur
 
 def delete_notification(notif_id):
@@ -320,6 +572,7 @@ def delete_notification(notif_id):
     data['recurring'] = [r for r in data['recurring'] if r.get('id') != notif_id]
 
     save_notifications(data)
+    broadcast_notifications()
     return {'deleted': notif_id}
 
 recipe_cache = {
@@ -518,6 +771,16 @@ class SkylightHandler(BaseHTTPRequestHandler):
             self._send_json(result)
 
         # ---------------------------------------------------------------------
+        # Calendar endpoints
+        # ---------------------------------------------------------------------
+        elif self.path == '/api/calendar':
+            self._send_json(calendar_cache['events'])
+
+        elif self.path == '/api/calendar/refresh':
+            fetch_calendar()
+            self._send_json(calendar_cache['events'])
+
+        # ---------------------------------------------------------------------
         # Recipe endpoints
         # ---------------------------------------------------------------------
         elif self.path == '/api/recipe':
@@ -538,14 +801,22 @@ class SkylightHandler(BaseHTTPRequestHandler):
             self._send_json(load_notifications())
 
         # ---------------------------------------------------------------------
+        # Config endpoints
+        # ---------------------------------------------------------------------
+        elif self.path == '/api/config':
+            self._send_json(CONFIG)
+
+        # ---------------------------------------------------------------------
         # Health check
         # ---------------------------------------------------------------------
         elif self.path == '/api/health':
             notif_data = load_notifications()
             self._send_json({
                 'status': 'ok',
-                'services': ['devices', 'recipe', 'notifications'],
+                'services': ['devices', 'calendar', 'recipe', 'notifications'],
                 'devices_configured': len(get_device_config()),
+                'calendar_updated': calendar_cache.get('updated', 0),
+                'calendar_events': len(calendar_cache.get('events', [])),
                 'recipe_updated': recipe_cache.get('updated', 0),
                 'notifications_count': len(notif_data.get('notifications', [])),
                 'recurring_count': len(notif_data.get('recurring', []))
@@ -592,6 +863,22 @@ class SkylightHandler(BaseHTTPRequestHandler):
             result = add_recurring(data)
             self._send_json(result)
 
+        # ---------------------------------------------------------------------
+        # Config endpoints
+        # ---------------------------------------------------------------------
+        elif self.path == '/api/config':
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode() if content_length else '{}'
+            try:
+                data = json.loads(body) if body else {}
+                if save_config(data):
+                    broadcast_reload()
+                    self._send_json({'success': True, 'message': 'Configuration saved'})
+                else:
+                    self._send_json({'error': 'Failed to save configuration'}, 500)
+            except json.JSONDecodeError as e:
+                self._send_json({'error': f'Invalid JSON: {str(e)}'}, 400)
+
         else:
             self._send_json({'error': 'Not found'}, 404)
 
@@ -621,19 +908,30 @@ class SkylightHandler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     PORT = 8889
 
-    # Load recipe cache
+    # Load caches
+    load_calendar_cache()
     load_recipe_cache()
 
-    # Start recipe update background thread
+    # Start background update threads
+    calendar_thread = threading.Thread(target=calendar_update_loop, daemon=True)
+    calendar_thread.start()
+
     recipe_thread = threading.Thread(target=recipe_update_loop, daemon=True)
     recipe_thread.start()
+
+    # Start WebSocket server thread
+    if WEBSOCKETS_AVAILABLE:
+        ws_thread = threading.Thread(target=start_websocket_server, daemon=True)
+        ws_thread.start()
 
     # Print startup info
     print("=" * 60)
     print("  Skylight Home Service")
     print("=" * 60)
-    print(f"  Port: {PORT}")
+    print(f"  HTTP Port: {PORT}")
+    print(f"  WebSocket: {'ws://0.0.0.0:8890' if WEBSOCKETS_AVAILABLE else 'Not available'}")
     print(f"  Devices configured: {list(get_device_config().keys())}")
+    print(f"  Calendar events: {len(calendar_cache.get('events', []))}")
     print(f"  Recipe cache: {recipe_cache.get('title', 'Not loaded')}")
     print("=" * 60)
     print()
@@ -641,6 +939,8 @@ if __name__ == '__main__':
     print("  GET  /api/devices              - All device status")
     print("  GET  /api/device/<id>          - Single device status")
     print("  POST /api/device/<id>/<action> - Control device")
+    print("  GET  /api/calendar             - Calendar events (next 14 days)")
+    print("  GET  /api/calendar/refresh     - Force calendar refresh")
     print("  GET  /api/recipe               - Current recipe")
     print("  GET  /api/recipe/refresh       - Force recipe refresh")
     print("  GET  /api/notifications        - Active notifications")
@@ -648,6 +948,8 @@ if __name__ == '__main__':
     print("  POST /api/notifications        - Add notification")
     print("  POST /api/notifications/recurring - Add recurring reminder")
     print("  DEL  /api/notifications/<id>   - Delete notification")
+    print("  GET  /api/config               - Get current configuration")
+    print("  POST /api/config               - Save configuration (triggers reload)")
     print("  GET  /api/health               - Service health check")
     print()
 

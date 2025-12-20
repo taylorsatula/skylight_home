@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skylight Config</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Config page overrides - desktop optimized */
+    html { font-size: 16px; }
+
+    body {
+      width: 100%;
+      height: auto;
+      min-height: 100vh;
+      overflow: auto;
+      padding: var(--spacing-2xl);
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
+
+    .config-app {
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .config-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--spacing-2xl);
+      padding-bottom: var(--spacing-lg);
+      border-bottom: 1px solid var(--surface-divider);
+    }
+
+    .config-header__title {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .config-header__actions {
+      display: flex;
+      gap: var(--spacing-md);
+    }
+
+    .config-section {
+      background: var(--surface-widget);
+      border-radius: var(--radius-2xl);
+      padding: var(--spacing-xl);
+      margin-bottom: var(--spacing-lg);
+    }
+
+    .config-section__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--spacing-lg);
+      cursor: pointer;
+    }
+
+    .config-section__title {
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+    }
+
+    .config-section__toggle {
+      color: var(--text-muted);
+      transition: transform 0.2s ease;
+    }
+
+    .config-section--collapsed .config-section__toggle {
+      transform: rotate(-90deg);
+    }
+
+    .config-section--collapsed .config-section__body {
+      display: none;
+    }
+
+    .config-section__body {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-md);
+    }
+
+    /* Form fields */
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-xs);
+    }
+
+    .field--inline {
+      flex-direction: row;
+      align-items: center;
+      gap: var(--spacing-md);
+    }
+
+    .field--inline .field__label {
+      min-width: 140px;
+      margin-bottom: 0;
+    }
+
+    .field__label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .field__hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: var(--spacing-xs);
+    }
+
+    .field__input {
+      background: var(--surface-inset);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: var(--radius-md);
+      padding: var(--spacing-sm) var(--spacing-md);
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 15px;
+      width: 100%;
+      transition: border-color 0.15s ease;
+    }
+
+    .field__input:focus {
+      outline: none;
+      border-color: var(--color-accent);
+    }
+
+    .field__input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .field__input--mono {
+      font-family: var(--font-mono);
+      font-size: 13px;
+    }
+
+    select.field__input {
+      cursor: pointer;
+    }
+
+    /* Array fields */
+    .array-field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-sm);
+    }
+
+    .array-field__item {
+      display: flex;
+      gap: var(--spacing-sm);
+      align-items: center;
+    }
+
+    .array-field__item .field__input {
+      flex: 1;
+    }
+
+    .array-field__remove {
+      padding: var(--spacing-sm);
+      background: rgba(255, 69, 58, 0.2);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: var(--color-error);
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .array-field__remove:hover {
+      background: rgba(255, 69, 58, 0.3);
+    }
+
+    .array-field__add {
+      align-self: flex-start;
+      margin-top: var(--spacing-sm);
+    }
+
+    /* Object fields (devices) */
+    .object-field {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-md);
+    }
+
+    .object-field__item {
+      background: var(--surface-inset);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-md);
+    }
+
+    .object-field__item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--spacing-md);
+      padding-bottom: var(--spacing-sm);
+      border-bottom: 1px solid var(--surface-divider);
+    }
+
+    .object-field__item-key {
+      font-weight: 600;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: var(--color-accent);
+    }
+
+    .object-field__item-fields {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-md);
+    }
+
+    .object-field__add {
+      align-self: flex-start;
+    }
+
+    /* Layout editor */
+    .layout-editor {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-lg);
+    }
+
+    .layout-row {
+      background: var(--surface-inset);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-md);
+    }
+
+    .layout-row__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--spacing-md);
+    }
+
+    .layout-row__title {
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+
+    .layout-row__tiles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--spacing-sm);
+    }
+
+    .layout-tile {
+      background: var(--surface-widget);
+      border-radius: var(--radius-md);
+      padding: var(--spacing-md);
+      min-width: 200px;
+      flex: 1;
+      max-width: 300px;
+    }
+
+    .layout-tile__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .layout-tile__type {
+      font-weight: 500;
+      color: var(--color-accent);
+    }
+
+    .layout-tile__config {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-xs);
+      margin-top: var(--spacing-sm);
+    }
+
+    .layout-tile__config .field__input {
+      font-size: 13px;
+      padding: var(--spacing-xs) var(--spacing-sm);
+    }
+
+    /* Status messages */
+    .status {
+      position: fixed;
+      bottom: var(--spacing-2xl);
+      right: var(--spacing-2xl);
+      padding: var(--spacing-md) var(--spacing-xl);
+      border-radius: var(--radius-lg);
+      font-weight: 500;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.3s ease;
+      z-index: 100;
+    }
+
+    .status--visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .status--success {
+      background: rgba(48, 209, 88, 0.9);
+      color: #fff;
+    }
+
+    .status--error {
+      background: rgba(255, 69, 58, 0.9);
+      color: #fff;
+    }
+
+    /* Loading state */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 60px;
+      color: var(--text-muted);
+    }
+
+    /* Field groups */
+    .field-group {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-md);
+    }
+
+    /* Buttons */
+    .btn--save {
+      background: var(--color-success);
+      color: #fff;
+    }
+
+    .btn--save:hover {
+      background: #28b84c;
+    }
+
+    .btn--danger {
+      background: rgba(255, 69, 58, 0.2);
+      color: var(--color-error);
+    }
+
+    .btn--danger:hover {
+      background: rgba(255, 69, 58, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="config-app">
+    <header class="config-header">
+      <h1 class="config-header__title">Skylight Configuration</h1>
+      <div class="config-header__actions">
+        <button class="btn" onclick="loadConfig()">Reload</button>
+        <button class="btn btn--save" onclick="saveConfig()">Save & Apply</button>
+      </div>
+    </header>
+    <main id="config-sections">
+      <div class="loading">Loading configuration...</div>
+    </main>
+  </div>
+  <div id="status" class="status"></div>
+
+  <script>
+    'use strict';
+
+    // ============================================
+    // CONFIG SCHEMA
+    // Defines the structure and UI for each config section
+    // ============================================
+
+    const CONFIG_SCHEMA = {
+      home: {
+        label: 'Dashboard',
+        icon: 'home',
+        fields: {
+          title: { type: 'text', label: 'Dashboard Title', placeholder: 'Home Dashboard' }
+        }
+      },
+      weather: {
+        label: 'Weather',
+        icon: 'sun',
+        fields: {
+          location: { type: 'text', label: 'Location Name', placeholder: 'New York' },
+          latitude: { type: 'number', label: 'Latitude', step: 0.0001, placeholder: '40.7128' },
+          longitude: { type: 'number', label: 'Longitude', step: 0.0001, placeholder: '-74.0060' },
+          timezone: { type: 'timezone', label: 'Timezone' }
+        }
+      },
+      calendar: {
+        label: 'Calendar',
+        icon: 'calendar',
+        fields: {
+          icsUrls: {
+            type: 'array',
+            label: 'ICS Calendar URLs',
+            itemType: 'url',
+            placeholder: 'https://calendar.google.com/calendar/ical/...',
+            hint: 'Get from Google Calendar: Settings > Calendar > Integrate > Secret address in iCal format'
+          },
+          daysAhead: { type: 'number', label: 'Days Ahead', min: 1, max: 90, placeholder: '14' }
+        }
+      },
+      apis: {
+        label: 'API Endpoints',
+        icon: 'server',
+        fields: {
+          calendar: { type: 'url', label: 'Calendar API', placeholder: 'http://localhost:8889/api/calendar' },
+          note: { type: 'url', label: 'Note API', placeholder: 'http://localhost:8892/api/note' },
+          recipe: { type: 'url', label: 'Recipe API', placeholder: 'http://localhost:8889/api/recipe' },
+          notifications: { type: 'url', label: 'Notifications API', placeholder: 'http://localhost:8889/api/notifications' },
+          aftership: { type: 'url', label: 'AfterShip API', placeholder: 'https://api.aftership.com/v4/trackings' },
+          aftership_key: { type: 'text', label: 'AfterShip API Key', placeholder: 'your-api-key', mono: true }
+        }
+      },
+      homeAssistant: {
+        label: 'Home Assistant',
+        icon: 'home',
+        fields: {
+          url: { type: 'url', label: 'Home Assistant URL', placeholder: 'http://homeassistant.local:8123' },
+          token: { type: 'text', label: 'Long-Lived Access Token', placeholder: 'Bearer token', mono: true }
+        }
+      },
+      tapo: {
+        label: 'Tapo Credentials',
+        icon: 'lock',
+        fields: {
+          username: { type: 'text', label: 'Tapo Username', placeholder: 'email@example.com' },
+          password: { type: 'password', label: 'Tapo Password', placeholder: 'password' }
+        }
+      },
+      devices: {
+        label: 'Devices',
+        icon: 'cpu',
+        type: 'deviceMap',
+        hint: 'Configure smart devices (Kasa/Tapo). Key is the device ID used in layout.'
+      },
+      layout: {
+        label: 'Layout',
+        icon: 'layout',
+        type: 'layout'
+      }
+    };
+
+    // Tile type definitions for layout editor
+    const TILE_TYPES = {
+      device: { label: 'Device', fields: ['deviceId'] },
+      deviceStack: { label: 'Device Stack', fields: ['devices'] },
+      weather: { label: 'Weather', fields: ['width', 'forecastDays', 'conditions'] },
+      calendar: { label: 'Calendar', fields: ['width'] },
+      note: { label: 'Note', fields: ['width'] },
+      photo: { label: 'Photo', fields: ['src', 'width'] },
+      recipe: { label: 'Recipe', fields: [] },
+      shipping: { label: 'Shipping', fields: [] },
+      notifications: { label: 'Notifications', fields: [] }
+    };
+
+    // Common timezones
+    const TIMEZONES = [
+      'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+      'America/Phoenix', 'America/Anchorage', 'Pacific/Honolulu',
+      'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Moscow',
+      'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Singapore', 'Asia/Dubai',
+      'Australia/Sydney', 'Australia/Melbourne', 'Pacific/Auckland'
+    ];
+
+    // Icon SVGs
+    const ICONS = {
+      home: '<svg class="icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+      sun: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>',
+      calendar: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+      server: '<svg class="icon" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>',
+      lock: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+      cpu: '<svg class="icon" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>',
+      layout: '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>',
+      chevron: '<svg class="icon icon--sm" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>',
+      plus: '<svg class="icon icon--sm" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+      x: '<svg class="icon icon--sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+    };
+
+    // ============================================
+    // STATE
+    // ============================================
+
+    let config = {};
+    let apiBase = '';
+
+    // ============================================
+    // INIT
+    // ============================================
+
+    async function init() {
+      // Determine API base from current location or config
+      const hostname = window.location.hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        apiBase = 'http://localhost:8889';
+      } else {
+        apiBase = `http://${hostname}:8889`;
+      }
+
+      await loadConfig();
+    }
+
+    // ============================================
+    // API
+    // ============================================
+
+    async function loadConfig() {
+      try {
+        const response = await fetch(`${apiBase}/api/config`);
+        if (!response.ok) throw new Error('Failed to load config');
+        config = await response.json();
+        renderSections();
+        showStatus('Configuration loaded', 'success');
+      } catch (error) {
+        console.error('Load error:', error);
+        showStatus('Failed to load configuration', 'error');
+        document.getElementById('config-sections').innerHTML = `
+          <div class="config-section">
+            <div class="empty-state">
+              <div class="empty-state__title">Connection Error</div>
+              <div class="empty-state__message">Could not connect to ${apiBase}</div>
+              <button class="btn btn--primary" onclick="loadConfig()">Retry</button>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    async function saveConfig() {
+      try {
+        collectFormData();
+
+        const response = await fetch(`${apiBase}/api/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+
+        if (!response.ok) throw new Error('Failed to save config');
+
+        const result = await response.json();
+        showStatus('Configuration saved! Skylight will reload.', 'success');
+      } catch (error) {
+        console.error('Save error:', error);
+        showStatus('Failed to save configuration', 'error');
+      }
+    }
+
+    // ============================================
+    // RENDERING
+    // ============================================
+
+    function renderSections() {
+      const container = document.getElementById('config-sections');
+      container.innerHTML = '';
+
+      for (const [key, schema] of Object.entries(CONFIG_SCHEMA)) {
+        const section = document.createElement('section');
+        section.className = 'config-section';
+        section.dataset.section = key;
+
+        const value = config[key] || {};
+
+        section.innerHTML = `
+          <div class="config-section__header" onclick="toggleSection('${key}')">
+            <h2 class="config-section__title">
+              ${ICONS[schema.icon] || ''}
+              ${schema.label}
+            </h2>
+            <span class="config-section__toggle">${ICONS.chevron}</span>
+          </div>
+          <div class="config-section__body">
+            ${renderSectionBody(key, schema, value)}
+          </div>
+        `;
+
+        container.appendChild(section);
+      }
+    }
+
+    function renderSectionBody(key, schema, value) {
+      if (schema.type === 'deviceMap') {
+        return renderDeviceMap(key, value, schema.hint);
+      }
+
+      if (schema.type === 'layout') {
+        return renderLayoutEditor(value);
+      }
+
+      // Standard fields
+      let html = '<div class="config-section__body">';
+
+      if (schema.hint) {
+        html += `<p class="field__hint">${schema.hint}</p>`;
+      }
+
+      html += '<div class="field-group">';
+      for (const [fieldKey, fieldSchema] of Object.entries(schema.fields)) {
+        html += renderField(key, fieldKey, fieldSchema, value[fieldKey]);
+      }
+      html += '</div></div>';
+
+      return html;
+    }
+
+    function renderField(section, key, schema, value) {
+      const id = `${section}.${key}`;
+      const inputClass = schema.mono ? 'field__input field__input--mono' : 'field__input';
+
+      if (schema.type === 'array') {
+        return renderArrayField(section, key, schema, value || []);
+      }
+
+      if (schema.type === 'timezone') {
+        return `
+          <div class="field">
+            <label class="field__label" for="${id}">${schema.label}</label>
+            <select class="field__input" id="${id}" data-section="${section}" data-key="${key}">
+              <option value="">Select timezone...</option>
+              ${TIMEZONES.map(tz => `<option value="${tz}" ${value === tz ? 'selected' : ''}>${tz}</option>`).join('')}
+            </select>
+          </div>
+        `;
+      }
+
+      const inputType = schema.type === 'password' ? 'password' : (schema.type === 'number' ? 'number' : 'text');
+      const step = schema.step ? `step="${schema.step}"` : '';
+      const min = schema.min !== undefined ? `min="${schema.min}"` : '';
+      const max = schema.max !== undefined ? `max="${schema.max}"` : '';
+
+      return `
+        <div class="field">
+          <label class="field__label" for="${id}">${schema.label}</label>
+          <input
+            type="${inputType}"
+            class="${inputClass}"
+            id="${id}"
+            data-section="${section}"
+            data-key="${key}"
+            value="${value ?? ''}"
+            placeholder="${schema.placeholder || ''}"
+            ${step} ${min} ${max}
+          >
+          ${schema.hint ? `<span class="field__hint">${schema.hint}</span>` : ''}
+        </div>
+      `;
+    }
+
+    function renderArrayField(section, key, schema, values) {
+      const id = `${section}.${key}`;
+
+      let itemsHtml = values.map((val, idx) => `
+        <div class="array-field__item">
+          <input
+            type="${schema.itemType === 'url' ? 'url' : 'text'}"
+            class="field__input field__input--mono"
+            data-section="${section}"
+            data-key="${key}"
+            data-index="${idx}"
+            value="${val}"
+            placeholder="${schema.placeholder || ''}"
+          >
+          <button class="array-field__remove" onclick="removeArrayItem('${section}', '${key}', ${idx})">${ICONS.x}</button>
+        </div>
+      `).join('');
+
+      return `
+        <div class="field">
+          <label class="field__label">${schema.label}</label>
+          ${schema.hint ? `<span class="field__hint">${schema.hint}</span>` : ''}
+          <div class="array-field" id="${id}">
+            ${itemsHtml}
+            <button class="btn array-field__add" onclick="addArrayItem('${section}', '${key}')">
+              ${ICONS.plus} Add
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderDeviceMap(section, devices, hint) {
+      let html = '';
+
+      if (hint) {
+        html += `<p class="field__hint">${hint}</p>`;
+      }
+
+      html += '<div class="object-field">';
+
+      for (const [deviceId, device] of Object.entries(devices)) {
+        html += `
+          <div class="object-field__item" data-device-id="${deviceId}">
+            <div class="object-field__item-header">
+              <span class="object-field__item-key">${deviceId}</span>
+              <button class="btn btn--danger btn--icon" onclick="removeDevice('${deviceId}')">${ICONS.x}</button>
+            </div>
+            <div class="object-field__item-fields">
+              <div class="field">
+                <label class="field__label">IP Address</label>
+                <input type="text" class="field__input field__input--mono" data-device="${deviceId}" data-field="ip" value="${device || ''}" placeholder="192.168.1.100">
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      html += `
+        <div class="object-field__add-form" id="add-device-form" style="display: none;">
+          <div class="object-field__item">
+            <div class="object-field__item-fields">
+              <div class="field">
+                <label class="field__label">Device ID</label>
+                <input type="text" class="field__input field__input--mono" id="new-device-id" placeholder="living_room_light">
+              </div>
+              <div class="field">
+                <label class="field__label">IP Address</label>
+                <input type="text" class="field__input field__input--mono" id="new-device-ip" placeholder="192.168.1.100">
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-md);">
+              <button class="btn btn--primary" onclick="confirmAddDevice()">Add Device</button>
+              <button class="btn" onclick="cancelAddDevice()">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn object-field__add" id="add-device-btn" onclick="showAddDevice()">
+          ${ICONS.plus} Add Device
+        </button>
+      </div>`;
+
+      return html;
+    }
+
+    function renderLayoutEditor(layout) {
+      const rows = ['topRow', 'middleRow', 'bottomRow'];
+
+      let html = '<div class="layout-editor">';
+
+      for (const rowKey of rows) {
+        const row = layout?.[rowKey] || { tiles: [] };
+        const tiles = row.tiles || [];
+
+        html += `
+          <div class="layout-row" data-row="${rowKey}">
+            <div class="layout-row__header">
+              <span class="layout-row__title">${rowKey.replace('Row', ' Row')}</span>
+              <button class="btn" onclick="addTile('${rowKey}')">${ICONS.plus} Add Tile</button>
+            </div>
+            <div class="layout-row__tiles">
+              ${tiles.map((tile, idx) => renderLayoutTile(rowKey, idx, tile)).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    function renderLayoutTile(rowKey, index, tile) {
+      const tileType = TILE_TYPES[tile.type] || { label: tile.type, fields: [] };
+
+      let configHtml = '';
+
+      // Type selector
+      configHtml += `
+        <div class="field">
+          <select class="field__input" data-row="${rowKey}" data-tile="${index}" data-field="type" onchange="updateTileType('${rowKey}', ${index}, this.value)">
+            ${Object.entries(TILE_TYPES).map(([type, def]) =>
+              `<option value="${type}" ${tile.type === type ? 'selected' : ''}>${def.label}</option>`
+            ).join('')}
+          </select>
+        </div>
+      `;
+
+      // Type-specific fields
+      if (tileType.fields.includes('deviceId')) {
+        const deviceOptions = Object.keys(config.devices || {}).map(id =>
+          `<option value="${id}" ${tile.deviceId === id ? 'selected' : ''}>${id}</option>`
+        ).join('');
+        configHtml += `
+          <div class="field">
+            <label class="field__label">Device</label>
+            <select class="field__input" data-row="${rowKey}" data-tile="${index}" data-field="deviceId">
+              <option value="">Select device...</option>
+              ${deviceOptions}
+            </select>
+          </div>
+        `;
+      }
+
+      if (tileType.fields.includes('devices')) {
+        const currentDevices = tile.devices || [];
+        configHtml += `
+          <div class="field">
+            <label class="field__label">Devices (comma-separated)</label>
+            <input type="text" class="field__input field__input--mono"
+              data-row="${rowKey}" data-tile="${index}" data-field="devices"
+              value="${currentDevices.join(', ')}"
+              placeholder="device1, device2">
+          </div>
+        `;
+      }
+
+      if (tileType.fields.includes('width')) {
+        configHtml += `
+          <div class="field">
+            <label class="field__label">Width</label>
+            <input type="text" class="field__input"
+              data-row="${rowKey}" data-tile="${index}" data-field="width"
+              value="${tile.width || ''}"
+              placeholder="400px or 1fr">
+          </div>
+        `;
+      }
+
+      if (tileType.fields.includes('src')) {
+        configHtml += `
+          <div class="field">
+            <label class="field__label">Image Source</label>
+            <input type="text" class="field__input"
+              data-row="${rowKey}" data-tile="${index}" data-field="src"
+              value="${tile.src || ''}"
+              placeholder="photo.jpeg">
+          </div>
+        `;
+      }
+
+      if (tileType.fields.includes('forecastDays')) {
+        configHtml += `
+          <div class="field">
+            <label class="field__label">Forecast Days</label>
+            <input type="number" class="field__input"
+              data-row="${rowKey}" data-tile="${index}" data-field="forecastDays"
+              value="${tile.forecastDays || ''}"
+              min="1" max="7" placeholder="4">
+          </div>
+        `;
+      }
+
+      if (tileType.fields.includes('conditions')) {
+        const currentConditions = tile.conditions || [];
+        configHtml += `
+          <div class="field">
+            <label class="field__label">Conditions (comma-separated)</label>
+            <input type="text" class="field__input"
+              data-row="${rowKey}" data-tile="${index}" data-field="conditions"
+              value="${currentConditions.join(', ')}"
+              placeholder="humidity, wind, precip">
+          </div>
+        `;
+      }
+
+      return `
+        <div class="layout-tile" data-row="${rowKey}" data-index="${index}">
+          <div class="layout-tile__header">
+            <span class="layout-tile__type">${tileType.label}</span>
+            <button class="btn btn--icon btn--danger" onclick="removeTile('${rowKey}', ${index})">${ICONS.x}</button>
+          </div>
+          <div class="layout-tile__config">
+            ${configHtml}
+          </div>
+        </div>
+      `;
+    }
+
+    // ============================================
+    // INTERACTIONS
+    // ============================================
+
+    function toggleSection(key) {
+      const section = document.querySelector(`[data-section="${key}"]`);
+      section.classList.toggle('config-section--collapsed');
+    }
+
+    function addArrayItem(section, key) {
+      if (!config[section]) config[section] = {};
+      if (!config[section][key]) config[section][key] = [];
+      config[section][key].push('');
+      renderSections();
+    }
+
+    function removeArrayItem(section, key, index) {
+      config[section][key].splice(index, 1);
+      renderSections();
+    }
+
+    function showAddDevice() {
+      document.getElementById('add-device-form').style.display = 'block';
+      document.getElementById('add-device-btn').style.display = 'none';
+      document.getElementById('new-device-id').focus();
+    }
+
+    function cancelAddDevice() {
+      document.getElementById('add-device-form').style.display = 'none';
+      document.getElementById('add-device-btn').style.display = 'block';
+      document.getElementById('new-device-id').value = '';
+      document.getElementById('new-device-ip').value = '';
+    }
+
+    function confirmAddDevice() {
+      const id = document.getElementById('new-device-id').value.trim();
+      const ip = document.getElementById('new-device-ip').value.trim();
+
+      if (!id) {
+        showStatus('Device ID is required', 'error');
+        return;
+      }
+
+      if (!config.devices) config.devices = {};
+      config.devices[id] = ip;
+      cancelAddDevice();
+      renderSections();
+    }
+
+    function removeDevice(deviceId) {
+      if (confirm(`Remove device "${deviceId}"?`)) {
+        delete config.devices[deviceId];
+        renderSections();
+      }
+    }
+
+    function addTile(rowKey) {
+      if (!config.layout) config.layout = {};
+      if (!config.layout[rowKey]) config.layout[rowKey] = { tiles: [] };
+      config.layout[rowKey].tiles.push({ type: 'device' });
+      renderSections();
+    }
+
+    function removeTile(rowKey, index) {
+      config.layout[rowKey].tiles.splice(index, 1);
+      renderSections();
+    }
+
+    function updateTileType(rowKey, index, newType) {
+      const tile = config.layout[rowKey].tiles[index];
+      const oldType = tile.type;
+
+      // Keep only common fields when changing type
+      const newTile = { type: newType };
+      if (tile.width && TILE_TYPES[newType]?.fields.includes('width')) {
+        newTile.width = tile.width;
+      }
+
+      config.layout[rowKey].tiles[index] = newTile;
+      renderSections();
+    }
+
+    // ============================================
+    // DATA COLLECTION
+    // ============================================
+
+    function collectFormData() {
+      // Collect standard fields
+      document.querySelectorAll('[data-section][data-key]').forEach(input => {
+        const section = input.dataset.section;
+        const key = input.dataset.key;
+        const index = input.dataset.index;
+
+        if (!config[section]) config[section] = {};
+
+        if (index !== undefined) {
+          // Array item
+          if (!config[section][key]) config[section][key] = [];
+          config[section][key][parseInt(index)] = input.value;
+        } else {
+          // Regular field
+          let value = input.value;
+          if (input.type === 'number' && value !== '') {
+            value = parseFloat(value);
+          }
+          config[section][key] = value;
+        }
+      });
+
+      // Collect device fields
+      document.querySelectorAll('[data-device]').forEach(input => {
+        const deviceId = input.dataset.device;
+        const field = input.dataset.field;
+        if (!config.devices) config.devices = {};
+        if (field === 'ip') {
+          config.devices[deviceId] = input.value;
+        }
+      });
+
+      // Collect layout fields
+      document.querySelectorAll('[data-row][data-tile]').forEach(input => {
+        const rowKey = input.dataset.row;
+        const tileIndex = parseInt(input.dataset.tile);
+        const field = input.dataset.field;
+
+        if (!config.layout) config.layout = {};
+        if (!config.layout[rowKey]) config.layout[rowKey] = { tiles: [] };
+        if (!config.layout[rowKey].tiles[tileIndex]) {
+          config.layout[rowKey].tiles[tileIndex] = {};
+        }
+
+        let value = input.value;
+
+        // Handle special fields
+        if (field === 'devices' || field === 'conditions') {
+          value = value.split(',').map(s => s.trim()).filter(Boolean);
+        } else if (field === 'forecastDays' && value !== '') {
+          value = parseInt(value);
+        }
+
+        if (value !== '' && !(Array.isArray(value) && value.length === 0)) {
+          config.layout[rowKey].tiles[tileIndex][field] = value;
+        }
+      });
+
+      // Clean up empty values
+      cleanConfig(config);
+    }
+
+    function cleanConfig(obj) {
+      for (const key in obj) {
+        if (obj[key] === '' || obj[key] === null || obj[key] === undefined) {
+          delete obj[key];
+        } else if (typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
+          cleanConfig(obj[key]);
+          if (Object.keys(obj[key]).length === 0) {
+            delete obj[key];
+          }
+        }
+      }
+    }
+
+    // ============================================
+    // STATUS
+    // ============================================
+
+    function showStatus(message, type) {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = `status status--visible status--${type}`;
+
+      setTimeout(() => {
+        status.classList.remove('status--visible');
+      }, 3000);
+    }
+
+    // ============================================
+    // BOOTSTRAP
+    // ============================================
+
+    init();
+  </script>
+</body>
+</html>
