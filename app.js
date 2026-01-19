@@ -18,12 +18,18 @@
 // GLOBAL STATE
 // ============================================
 
-let CONFIG = null;
+// CONFIG is defined in shared/core.js
 let deviceStates = {};
 let shipmentsCache = [];
 let notificationsCache = [];
+let remindersCache = [];
 let currentRecipeUrl = 'https://cooking.nytimes.com';
 let notifySocket = null;
+
+// Sleep mode state
+let isSleeping = false;
+let sleepCheckInterval = null;
+let currentDisplayState = 'normal'; // normal, dim, sleep
 
 // Polling intervals (stored for potential cleanup)
 const intervals = {
@@ -39,35 +45,16 @@ const intervals = {
 // Pending actions to prevent rapid toggles
 const pendingActions = {};
 
+// Reminders state
+let remindersPendingRequests = new Set();
+let renderedReminderIds = new Set();
+
 // ============================================
 // CONFIGURATION
 // ============================================
 
-/**
- * Load configuration from config.json
- */
-async function loadConfig() {
-  try {
-    const response = await fetch('config.json');
-    if (!response.ok) throw new Error('Config fetch failed');
-    CONFIG = await response.json();
-    return CONFIG;
-  } catch (error) {
-    console.error('Failed to load config.json:', error);
-    // Return minimal defaults
-    CONFIG = {
-      weather: { latitude: 34.67, longitude: -86.50, timezone: 'America/Chicago', location: 'Unknown' },
-      apis: {},
-      home: { title: 'Home Dashboard' },
-      layout: {
-        topRow: { tiles: [] },
-        middleRow: { columns: [1, 1, 1, 1], tiles: [] },
-        bottomRow: { columns: [1, 1, 1, 1], tiles: [] }
-      }
-    };
-    return CONFIG;
-  }
-}
+// loadConfig is defined in shared/core.js
+// Dashboard-specific default layout handled in init()
 
 // ============================================
 // LAYOUT ENGINE
@@ -184,6 +171,7 @@ const WIDGET_TYPES = {
   'recipe': createRecipeWidget,
   'shipping': createShippingWidget,
   'notifications': createNotificationsWidget,
+  'reminders': createRemindersWidget,
   'deviceStack': createDeviceStackWidget,
   'placeholder': createPlaceholderWidget,
 };
@@ -207,27 +195,7 @@ function createWidget(type, config) {
 // HOME ASSISTANT INTEGRATION
 // ============================================
 
-/**
- * Make authenticated request to Home Assistant API
- */
-async function haFetch(endpoint, options = {}) {
-  const url = CONFIG.homeAssistant?.url || 'http://192.168.1.137:8123';
-  const token = CONFIG.homeAssistant?.token || '';
-
-  const response = await fetch(`${url}${endpoint}`, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...options.headers
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`HA API error: ${response.status}`);
-  }
-  return response.json();
-}
+// haFetch is defined in shared/core.js
 
 /**
  * Fetch single device state from Home Assistant
@@ -539,42 +507,7 @@ function createDeviceStackWidget(config) {
 // WIDGET: WEATHER
 // ============================================
 
-const WEATHER_CODES = {
-  0: { icon: 'weather-sun', desc: 'Clear' },
-  1: { icon: 'weather-sun', desc: 'Mostly Clear' },
-  2: { icon: 'weather-partly-cloudy', desc: 'Partly Cloudy' },
-  3: { icon: 'weather-partly-cloudy', desc: 'Overcast' },
-  45: { icon: 'weather-cloudy', desc: 'Foggy' },
-  48: { icon: 'weather-cloudy', desc: 'Icy Fog' },
-  51: { icon: 'weather-rain', desc: 'Light Drizzle' },
-  53: { icon: 'weather-rain', desc: 'Drizzle' },
-  55: { icon: 'weather-rain', desc: 'Heavy Drizzle' },
-  61: { icon: 'weather-rain', desc: 'Light Rain' },
-  63: { icon: 'weather-rain', desc: 'Rain' },
-  65: { icon: 'weather-rain', desc: 'Heavy Rain' },
-  71: { icon: 'weather-snow', desc: 'Light Snow' },
-  73: { icon: 'weather-snow', desc: 'Snow' },
-  75: { icon: 'weather-snow', desc: 'Heavy Snow' },
-  77: { icon: 'weather-snow', desc: 'Snow Grains' },
-  80: { icon: 'weather-rain', desc: 'Light Showers' },
-  81: { icon: 'weather-rain', desc: 'Showers' },
-  82: { icon: 'weather-rain', desc: 'Heavy Showers' },
-  85: { icon: 'weather-snow', desc: 'Snow Showers' },
-  86: { icon: 'weather-snow', desc: 'Heavy Snow Showers' },
-  95: { icon: 'weather-storm', desc: 'Thunderstorm' },
-  96: { icon: 'weather-storm', desc: 'Thunderstorm w/ Hail' },
-  99: { icon: 'weather-storm', desc: 'Severe Thunderstorm' },
-};
-
-function getWeatherInfo(code) {
-  return WEATHER_CODES[code] || { icon: 'weather-sun', desc: 'Unknown' };
-}
-
-function getDayName(dateStr, index) {
-  if (index === 0) return 'Today';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', { weekday: 'short' });
-}
+// WEATHER_CODES, getWeatherInfo, getDayName are defined in shared/core.js
 
 // Store weather widget config for fetchWeather to access
 let weatherWidgetConfig = null;
@@ -598,40 +531,10 @@ function createWeatherWidget(config) {
   widget.className = 'widget';
   widget.id = 'weather-widget';
 
-  // Build conditions HTML based on config
-  const conditions = config.conditions || ['humidity', 'wind', 'precip'];
-  const conditionsHtml = conditions.map(cond => {
-    const info = CONDITION_TYPES[cond] || { label: cond, default: '--' };
-    return `<div class="weather__stat"><div class="weather__stat-value" id="weather-${cond}">${info.default}</div><div class="weather__stat-label">${info.label}</div></div>`;
-  }).join('');
-
-  // Determine grid columns based on number of conditions
-  const gridCols = Math.min(conditions.length, 4);
-
+  // Initial loading state - content will be rendered by shared WeatherWidget
   widget.innerHTML = `
-    <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-      <div style="display: flex; align-items: center; gap: 16px;">
-        <svg class="icon icon--2xl" id="weather-icon"><use href="#weather-sun"/></svg>
-        <div>
-          <div class="weather__temp"><span id="weather-temp">--</span><span class="weather__temp-unit">°</span></div>
-          <div class="weather__condition" id="weather-condition">Loading...</div>
-        </div>
-      </div>
-      <div style="text-align: right;">
-        <div class="weather__location" id="weather-location">${CONFIG.weather?.location || 'Unknown'}</div>
-        <div class="weather__range"><span class="weather__range-high" id="weather-high">--°</span> / <span id="weather-low">--°</span></div>
-        <div class="weather__feels-like">Feels like <span id="weather-feels">--</span>°</div>
-      </div>
-    </div>
-    <div class="section">
-      <div class="section__title">Conditions</div>
-      <div class="weather__stats" style="grid-template-columns: repeat(${gridCols}, 1fr);">
-        ${conditionsHtml}
-      </div>
-    </div>
-    <div class="section">
-      <div class="section__title">This Week</div>
-      <div class="weather__daily" id="weather-forecast"></div>
+    <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">
+      Loading weather...
     </div>
   `;
 
@@ -639,115 +542,18 @@ function createWeatherWidget(config) {
 }
 
 async function fetchWeather() {
-  const lat = CONFIG.weather?.latitude || 34.67;
-  const lon = CONFIG.weather?.longitude || -86.50;
-  const tz = CONFIG.weather?.timezone || 'America/Chicago';
+  // Use shared WeatherWidget from shared/widgets.js
+  const config = {
+    weather: CONFIG.weather,
+    forecastDays: weatherWidgetConfig?.forecastDays || 4,
+    conditions: weatherWidgetConfig?.conditions || ['humidity', 'wind', 'precip']
+  };
 
-  // Get forecast days from widget config (default 4, max 14)
-  const forecastDays = Math.min(weatherWidgetConfig?.forecastDays || 4, 14);
-  const conditions = weatherWidgetConfig?.conditions || ['humidity', 'wind', 'precip'];
+  await WeatherWidget.fetch(config);
 
-  // Build API URL with required fields based on conditions
-  const currentFields = ['temperature_2m', 'weather_code', 'apparent_temperature'];
-  if (conditions.includes('humidity')) currentFields.push('relative_humidity_2m');
-  if (conditions.includes('wind')) currentFields.push('wind_speed_10m');
-  if (conditions.includes('uv')) currentFields.push('uv_index');
-  if (conditions.includes('visibility')) currentFields.push('visibility');
-  if (conditions.includes('pressure')) currentFields.push('surface_pressure');
-
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=${currentFields.join(',')}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=${encodeURIComponent(tz)}&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=${forecastDays}`;
-
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Weather fetch failed');
-    const data = await response.json();
-
-    const current = data.current;
-    const daily = data.daily;
-
-    // Current conditions
-    const weatherInfo = getWeatherInfo(current.weather_code);
-    const iconEl = document.getElementById('weather-icon');
-    if (iconEl) iconEl.innerHTML = `<use href="#${weatherInfo.icon}"/>`;
-
-    setTextContent('weather-temp', Math.round(current.temperature_2m));
-    setTextContent('weather-condition', weatherInfo.desc);
-    setTextContent('weather-feels', Math.round(current.apparent_temperature));
-
-    // Today's high/low
-    setTextContent('weather-high', Math.round(daily.temperature_2m_max[0]) + '°');
-    setTextContent('weather-low', Math.round(daily.temperature_2m_min[0]) + '°');
-
-    // Update condition values based on what's configured
-    conditions.forEach(cond => {
-      let value = '--';
-      const info = CONDITION_TYPES[cond] || { unit: '' };
-      switch (cond) {
-        case 'humidity':
-          value = (current.relative_humidity_2m || 0) + info.unit;
-          break;
-        case 'wind':
-          value = Math.round(current.wind_speed_10m || 0) + info.unit;
-          break;
-        case 'precip':
-          value = (daily.precipitation_probability_max[0] || 0) + info.unit;
-          break;
-        case 'uv':
-          value = Math.round(current.uv_index || 0) + info.unit;
-          break;
-        case 'feelsLike':
-          value = Math.round(current.apparent_temperature || 0) + info.unit;
-          break;
-        case 'visibility':
-          value = Math.round((current.visibility || 0) / 1609.34) + info.unit; // meters to miles
-          break;
-        case 'pressure':
-          value = Math.round(current.surface_pressure || 0) + info.unit;
-          break;
-      }
-      setTextContent(`weather-${cond}`, value);
-    });
-
-    // Calculate temp range for bar positioning
-    const allTemps = [...daily.temperature_2m_max, ...daily.temperature_2m_min];
-    const minTemp = Math.min(...allTemps);
-    const maxTemp = Math.max(...allTemps);
-    const tempRange = maxTemp - minTemp || 1;
-
-    // Build forecast HTML
-    const forecastEl = document.getElementById('weather-forecast');
-    if (forecastEl) {
-      // Add scrollable class if more than 4 days
-      if (forecastDays > 4) {
-        forecastEl.classList.add('weather__daily--scrollable');
-      }
-
-      forecastEl.innerHTML = daily.time.slice(0, forecastDays).map((date, i) => {
-        const dayInfo = getWeatherInfo(daily.weather_code[i]);
-        const low = Math.round(daily.temperature_2m_min[i]);
-        const high = Math.round(daily.temperature_2m_max[i]);
-        const precip = daily.precipitation_probability_max[i] || 0;
-
-        const barLeft = ((low - minTemp) / tempRange) * 100;
-        const barWidth = ((high - low) / tempRange) * 100;
-
-        return `
-          <div class="weather__day ${i === 0 ? 'weather__day--today' : ''}">
-            <span class="weather__day-name">${getDayName(date, i)}</span>
-            <svg style="width: 28px; height: 28px;"><use href="#${dayInfo.icon}"/></svg>
-            <span class="weather__day-precip">${precip > 0 ? precip + '%' : ''}</span>
-            <div class="weather__day-temps">
-              <span class="weather__day-low">${low}°</span>
-              <div class="weather__day-bar"><div class="weather__day-bar-fill" style="left: ${barLeft}%; width: ${barWidth}%;"></div></div>
-              <span class="weather__day-high">${high}°</span>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-  } catch (error) {
-    console.error('Error fetching weather:', error);
-    setTextContent('weather-condition', 'Error loading');
+  const container = document.getElementById('weather-widget');
+  if (container) {
+    WeatherWidget.render(container, config);
   }
 }
 
@@ -1095,19 +901,15 @@ function createShippingWidget(config) {
   widget.style.cssText = 'padding: 0; overflow: hidden;';
 
   widget.innerHTML = `
-    <div id="shipping-list-view">
-      <div class="package-list__header">
-        <span class="package-list__title">Incoming Packages</span>
-        <span class="package-list__count" id="shipping-count">0 active</span>
-      </div>
-      <div id="shipping-list" style="overflow-y: auto; max-height: calc(100% - 48px);"></div>
+    <div id="shipping-list-view" style="padding: var(--spacing-lg);">
+      <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">Loading...</div>
     </div>
     <div id="shipping-detail-view" style="display: none; height: 100%; overflow-y: auto;">
-      <div class="package-list__header" style="cursor: pointer;" id="shipping-back-btn">
+      <div class="shipping-widget__header" style="cursor: pointer; padding: var(--spacing-lg);" id="shipping-back-btn">
         <svg class="icon icon--sm" style="color: var(--text-muted); transform: rotate(180deg); margin-right: 8px;"><use href="#icon-chevron"/></svg>
-        <span class="package-list__title">Back</span>
+        <span class="shipping-widget__title">Back</span>
       </div>
-      <div id="shipping-detail-content" style="padding: 16px;"></div>
+      <div id="shipping-detail-content" style="padding: 0 var(--spacing-lg) var(--spacing-lg);"></div>
     </div>
   `;
 
@@ -1122,108 +924,33 @@ function createShippingWidget(config) {
   return widget;
 }
 
-const STATUS_MAP = {
-  'Pending': { class: 'badge--pending', label: 'Pending' },
-  'InfoReceived': { class: 'badge--info', label: 'Label Created' },
-  'InTransit': { class: 'badge--warning', label: 'In Transit' },
-  'OutForDelivery': { class: 'badge--alert', label: 'Out for Delivery' },
-  'AttemptFail': { class: 'badge--error', label: 'Failed Attempt' },
-  'Delivered': { class: 'badge--success', label: 'Delivered' },
-  'AvailableForPickup': { class: 'badge--info', label: 'Ready for Pickup' },
-  'Exception': { class: 'badge--error', label: 'Exception' },
-  'Expired': { class: 'badge--error', label: 'Expired' }
-};
-
-const CARRIER_MAP = {
-  'ups': { class: 'package__carrier--ups', label: 'UPS' },
-  'fedex': { class: 'package__carrier--fedex', label: 'FDX' },
-  'usps': { class: 'package__carrier--usps', label: 'USPS' },
-  'dhl': { class: 'package__carrier--dhl', label: 'DHL' },
-  'amazon': { class: 'package__carrier--amazon', label: 'AMZ' },
-  'amazon-fba-us': { class: 'package__carrier--amazon', label: 'AMZ' },
-};
-
-function getStatusInfo(tag) {
-  return STATUS_MAP[tag] || { class: 'badge--pending', label: tag };
-}
-
-function getCarrierInfo(slug) {
-  return CARRIER_MAP[slug] || { class: 'package__carrier--other', label: 'PKG' };
-}
-
-function formatEta(expectedDelivery) {
-  if (!expectedDelivery) return '--';
-  const date = new Date(expectedDelivery);
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  if (date.toDateString() === today.toDateString()) return 'Today';
-  if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
 async function fetchShipments() {
-  const apiKey = CONFIG.apis?.aftership_key;
-  const apiUrl = CONFIG.apis?.aftership;
+  // Use shared ShippingWidget from shared/widgets.js
+  const config = {
+    apiKey: CONFIG.apis?.aftership_key,
+    apiUrl: CONFIG.apis?.aftership
+  };
 
-  if (!apiKey || !apiUrl) {
-    renderShippingList([]);
-    return;
-  }
+  await ShippingWidget.fetch(config);
+  shipmentsCache = ShippingWidget.state;
 
-  try {
-    const response = await fetch(apiUrl, {
-      headers: { 'aftership-api-key': apiKey }
-    });
-    if (!response.ok) throw new Error('Failed to fetch shipments');
-    const data = await response.json();
-    shipmentsCache = data.data?.trackings || [];
-    renderShippingList(shipmentsCache);
-  } catch (error) {
-    console.error('Error fetching shipments:', error);
-    renderShippingList([]);
+  const listView = document.getElementById('shipping-list-view');
+  if (listView) {
+    ShippingWidget.render(listView, { maxItems: 10 });
+    setupShippingClickHandlers();
   }
 }
 
-function renderShippingList(trackings) {
-  const listEl = document.getElementById('shipping-list');
-  const countEl = document.getElementById('shipping-count');
-  if (!listEl) return;
+function setupShippingClickHandlers() {
+  const listView = document.getElementById('shipping-list-view');
+  if (!listView) return;
 
-  // Filter to active (non-delivered) packages
-  const active = trackings.filter(t => t.tag !== 'Delivered');
-  if (countEl) countEl.textContent = `${active.length} active`;
-
-  if (active.length === 0) {
-    listEl.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No packages to track</div>';
-    return;
-  }
-
-  listEl.innerHTML = active.map((tracking, index) => {
-    const status = getStatusInfo(tracking.tag);
-    const carrier = getCarrierInfo(tracking.slug);
-    const eta = formatEta(tracking.expected_delivery);
-    const isToday = eta === 'Today';
-
-    return `
-      <div class="package-list__item" data-tracking-index="${index}" style="cursor: pointer;">
-        <div class="package-list__item-carrier ${carrier.class}">${carrier.label}</div>
-        <div class="package-list__item-info">
-          <div class="package-list__item-title">${tracking.title || 'Package'}</div>
-          <div class="package-list__item-status" style="${tracking.tag === 'OutForDelivery' ? 'color: var(--status-out);' : ''}">${status.label}</div>
-        </div>
-        <div class="package-list__item-eta ${isToday ? 'package-list__item-eta--today' : ''}">${eta}</div>
-        <svg class="icon icon--sm" style="color: var(--text-muted);"><use href="#icon-chevron"/></svg>
-      </div>
-    `;
-  }).join('');
-
-  // Add click handlers
-  listEl.querySelectorAll('.package-list__item').forEach(item => {
+  // Add click handlers using unified class name
+  listView.querySelectorAll('.shipping-widget__package').forEach(item => {
     item.addEventListener('click', () => {
       const index = parseInt(item.dataset.trackingIndex);
-      showShippingDetail(active[index]);
+      const tracking = ShippingWidget.getTracking(index);
+      if (tracking) showShippingDetail(tracking);
     });
   });
 }
@@ -1235,24 +962,25 @@ function showShippingDetail(tracking) {
 
   if (!listView || !detailView || !detailContent) return;
 
-  const status = getStatusInfo(tracking.tag);
-  const carrier = getCarrierInfo(tracking.slug);
+  const status = ShippingWidget.getStatusInfo(tracking.tag);
+  const carrier = ShippingWidget.getCarrierInfo(tracking.slug);
+  const eta = ShippingWidget.formatEta(tracking.expected_delivery);
   const checkpoints = tracking.checkpoints || [];
 
   detailContent.innerHTML = `
-    <div class="package__header" style="margin-bottom: 16px;">
-      <div class="package__carrier ${carrier.class}">${carrier.label}</div>
-      <div class="package__info">
-        <div class="package__title">${tracking.title || 'Package'}</div>
-        <div class="package__subtitle">${tracking.slug?.toUpperCase() || 'Carrier'}</div>
-        <div class="package__tracking">${tracking.tracking_number}</div>
+    <div class="shipping-widget__detail-header" style="display: flex; align-items: flex-start; gap: var(--spacing-md); margin-bottom: var(--spacing-lg);">
+      <div class="shipping-widget__carrier shipping-widget__carrier--${tracking.slug}">${carrier.label}</div>
+      <div style="flex: 1;">
+        <div style="font-size: 17px; font-weight: 600;">${tracking.title || 'Package'}</div>
+        <div style="font-size: 13px; color: var(--text-secondary);">${tracking.slug?.toUpperCase() || 'Carrier'}</div>
+        <div style="font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">${tracking.tracking_number}</div>
       </div>
       <div class="badge ${status.class}"><span class="badge__dot"></span>${status.label}</div>
     </div>
     ${tracking.expected_delivery ? `
-      <div style="margin-bottom: 16px; padding: 12px; background: var(--surface-inset); border-radius: var(--radius-lg);">
+      <div style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md); background: var(--surface-inset); border-radius: var(--radius-lg);">
         <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">Expected Delivery</div>
-        <div style="font-size: 18px; font-weight: 600;">${formatEta(tracking.expected_delivery)}</div>
+        <div style="font-size: 18px; font-weight: 600;">${eta}</div>
       </div>
     ` : ''}
     <div class="package__timeline">
@@ -1292,107 +1020,37 @@ function showShippingList() {
 
 function createNotificationsWidget(config) {
   const widget = document.createElement('div');
-  widget.className = 'widget notify-panel';
+  widget.className = 'widget';
   widget.id = 'notifications-widget';
 
-  // Initial empty state
-  renderNotifications([]);
+  // Initial empty state - content will be rendered by shared NotificationsWidget
+  widget.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">Loading...</div>`;
 
   return widget;
 }
 
-function getNotificationIcon(icon) {
-  const iconMap = {
-    'alert': '#icon-alert',
-    'star': '#icon-star',
-    'clock': '#icon-clock',
-    'check-circle': '#icon-check-circle'
-  };
-  return iconMap[icon] || '#icon-alert';
-}
-
 async function fetchNotifications() {
-  const apiUrl = CONFIG.apis?.notifications;
-  if (!apiUrl) {
-    renderNotifications([]);
-    return;
-  }
+  // Use shared NotificationsWidget from shared/widgets.js
+  const config = {
+    apiUrl: CONFIG.apis?.notifications
+  };
 
-  try {
-    const response = await fetch(apiUrl);
-    if (!response.ok) throw new Error('Failed to fetch notifications');
-    notificationsCache = await response.json();
-    renderNotifications(notificationsCache);
-  } catch (error) {
-    console.error('Error fetching notifications:', error);
-    renderNotifications([]);
+  await NotificationsWidget.fetch(config);
+  notificationsCache = NotificationsWidget.state;
+
+  const container = document.getElementById('notifications-widget');
+  if (container) {
+    NotificationsWidget.render(container);
+    setupNotificationDismissHandlers();
   }
 }
 
-function renderNotifications(notifications) {
+function setupNotificationDismissHandlers() {
   const widget = document.getElementById('notifications-widget');
   if (!widget) return;
 
-  // Reset classes
-  widget.className = 'widget notify-panel';
-
-  if (notifications.length === 0) {
-    // Calm state - no notifications
-    widget.classList.add('notify-panel--calm');
-    widget.innerHTML = `
-      <div class="notify-panel__header">
-        <div class="notify-panel__status">
-          <div class="notify-panel__dot"></div>
-          <span class="notify-panel__status-text">All Clear</span>
-        </div>
-        <span class="notify-panel__timestamp">Updated just now</span>
-      </div>
-      <div class="notify-panel__calm-state">
-        <svg class="icon icon--2xl"><use href="#icon-check-circle"/></svg>
-        <div class="notify-panel__calm-text">No alerts or reminders</div>
-        <div class="notify-panel__calm-subtext">Enjoy your day</div>
-      </div>
-    `;
-    return;
-  }
-
-  // Show max 2 alerts
-  const visibleAlerts = notifications.slice(0, 2);
-  const isSingle = visibleAlerts.length === 1;
-
-  // Determine header status based on highest priority present
-  const hasUrgent = notifications.some(n => n.priority === 'urgent');
-  const hasNormal = notifications.some(n => n.priority === 'normal');
-  const statusText = hasUrgent ? 'Alerts' : hasNormal ? 'Notices' : 'Info';
-  const dotClass = hasUrgent ? 'notify-panel__dot--urgent notify-panel__dot--pulse' : hasNormal ? 'notify-panel__dot--normal' : 'notify-panel__dot--info';
-
-  widget.innerHTML = `
-    <div class="notify-panel__header">
-      <div class="notify-panel__status">
-        <div class="notify-panel__dot ${dotClass}"></div>
-        <span class="notify-panel__status-text">${statusText}</span>
-      </div>
-      <span class="notify-panel__timestamp">Updated just now</span>
-    </div>
-    <div class="notify-panel__alerts${isSingle ? '' : ' notify-panel__alerts--dual'}">
-      ${visibleAlerts.map((n, i) => {
-        const alertClass = n.priority === 'urgent' ? 'notify-panel__alert--urgent' :
-                          n.priority === 'normal' ? 'notify-panel__alert--normal' : 'notify-panel__alert--info';
-        return `
-        <div class="notify-panel__alert ${alertClass}" data-notification-id="${n.id}">
-          <svg class="icon icon--${isSingle ? '2xl' : 'xl'}"><use href="${getNotificationIcon(n.icon)}"/></svg>
-          <div class="notify-panel__alert-text">
-            <div class="notify-panel__alert-title">${n.title}</div>
-            ${n.message ? `<div class="notify-panel__alert-subtitle">${n.message}</div>` : ''}
-          </div>
-          ${!n.recurring ? `<button class="notify-panel__dismiss" data-id="${n.id}" title="Dismiss"><svg class="icon icon--sm"><use href="#icon-x"/></svg></button>` : ''}
-        </div>
-      `}).join('')}
-    </div>
-  `;
-
-  // Set up individual dismiss buttons
-  widget.querySelectorAll('.notify-panel__dismiss').forEach(btn => {
+  // Set up dismiss buttons using the unified class name
+  widget.querySelectorAll('.notify-widget__dismiss').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = btn.dataset.id;
@@ -1479,6 +1137,468 @@ function createPlaceholderWidget(config) {
   widget.style.cssText = 'display: flex; align-items: center; justify-content: center; color: var(--text-muted);';
   widget.textContent = config.name || 'Placeholder';
   return widget;
+}
+
+// ============================================
+// WIDGET: REMINDERS
+// ============================================
+
+let remindersWidgetConfig = null;
+let currentReminderEdit = null;
+
+function createRemindersWidget(config) {
+  remindersWidgetConfig = config;
+
+  const widget = document.createElement('div');
+  widget.className = 'widget reminders-widget';
+  widget.id = 'reminders-widget';
+
+  widget.innerHTML = `
+    <div class="reminders__header">
+      <div class="reminders__title">Reminders</div>
+      <div class="reminders__count" id="reminders-count">0</div>
+    </div>
+    <div class="reminders__list" id="reminders-list">
+      <div class="reminders__loading">Loading...</div>
+    </div>
+    <button class="reminders__add-btn" id="reminders-add-btn" title="Add reminder">
+      <svg class="icon icon--md"><use href="#icon-plus"/></svg>
+    </button>
+  `;
+
+  // Setup add button handler
+  setTimeout(() => {
+    const addBtn = document.getElementById('reminders-add-btn');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => openReminderModal());
+    }
+  }, 0);
+
+  return widget;
+}
+
+async function fetchReminders() {
+  const apiUrl = CONFIG.apis?.reminders;
+  if (!apiUrl) {
+    renderReminders([]);
+    return;
+  }
+
+  try {
+    const response = await fetch(apiUrl);
+    if (!response.ok) throw new Error('Failed to fetch reminders');
+    remindersCache = await response.json();
+    renderReminders(remindersCache);
+  } catch (error) {
+    console.error('Error fetching reminders:', error);
+    renderReminders([]);
+  }
+}
+
+function renderReminders(reminders) {
+  const listEl = document.getElementById('reminders-list');
+  const countEl = document.getElementById('reminders-count');
+  if (!listEl) return;
+
+  const active = reminders.filter(r => !r.completed);
+  const completed = reminders.filter(r => r.completed);
+
+  // Update count
+  if (countEl) {
+    countEl.textContent = active.length;
+  }
+
+  if (reminders.length === 0) {
+    listEl.innerHTML = `
+      <div class="reminders__empty">
+        <svg class="icon icon--xl"><use href="#icon-check-circle"/></svg>
+        <div class="reminders__empty-text">No reminders</div>
+      </div>
+    `;
+    return;
+  }
+
+  // Get current reminder IDs from new data
+  const newIds = new Set(reminders.map(r => r.id));
+
+  // SURGICAL UPDATE: Remove deleted items
+  const existingItems = listEl.querySelectorAll('.reminder-item');
+  existingItems.forEach(item => {
+    const id = item.dataset.id;
+    if (!newIds.has(id)) {
+      item.remove();
+      renderedReminderIds.delete(id);
+    }
+  });
+
+  // SURGICAL UPDATE: Update or add items
+  let hasChanges = false;
+
+  [...active, ...completed].forEach((reminder, index) => {
+    const existingItem = listEl.querySelector(`[data-id="${CSS.escape(reminder.id)}"]`);
+
+    if (existingItem) {
+      // UPDATE: Check if content changed
+      if (needsUpdate(existingItem, reminder)) {
+        const newItem = createReminderElement(reminder);
+        existingItem.replaceWith(newItem);
+        hasChanges = true;
+      }
+    } else {
+      // ADD: New reminder
+      const newItem = createReminderElement(reminder);
+
+      // Find correct insertion point (maintain order)
+      const allItems = Array.from(listEl.querySelectorAll('.reminder-item'));
+      let insertBefore = null;
+      for (let i = 0; i < allItems.length; i++) {
+        const itemId = allItems[i].dataset.id;
+        const itemIndex = reminders.findIndex(r => r.id === itemId);
+        if (itemIndex > index) {
+          insertBefore = allItems[i];
+          break;
+        }
+      }
+
+      if (insertBefore) {
+        listEl.insertBefore(newItem, insertBefore);
+      } else {
+        listEl.appendChild(newItem);
+      }
+
+      renderedReminderIds.add(reminder.id);
+      hasChanges = true;
+    }
+  });
+
+  // Add section divider if needed
+  const existingDivider = listEl.querySelector('.reminders__section-divider');
+  if (completed.length > 0 && !existingDivider) {
+    const divider = document.createElement('div');
+    divider.className = 'reminders__section-divider';
+    divider.textContent = 'Completed';
+
+    // Insert before first completed item
+    const firstCompleted = listEl.querySelector(`[data-id="${CSS.escape(completed[0].id)}"]`);
+    if (firstCompleted) {
+      listEl.insertBefore(divider, firstCompleted);
+    }
+  } else if (completed.length === 0 && existingDivider) {
+    // Remove divider if no completed items
+    existingDivider.remove();
+  }
+
+  if (hasChanges) {
+    attachReminderListeners(); // Re-attach only if DOM changed
+  }
+}
+
+function needsUpdate(element, reminder) {
+  // Compare rendered content with new data
+  const titleEl = element.querySelector('.reminder-item__title');
+  const notesEl = element.querySelector('.reminder-item__notes');
+  const dateEl = element.querySelector('.reminder-item__date');
+
+  if (titleEl?.textContent !== reminder.title) return true;
+  if ((notesEl?.textContent || '') !== (reminder.notes || '')) return true;
+  if (element.classList.contains('reminder-item--completed') !== reminder.completed) return true;
+
+  // Check date formatting
+  if (reminder.dueDate) {
+    const formattedDate = formatReminderDate(reminder.dueDate);
+    if ((dateEl?.textContent || '') !== formattedDate) return true;
+  } else if (dateEl) {
+    return true; // Had date, now doesn't
+  }
+
+  return false;
+}
+
+function createReminderElement(reminder) {
+  const item = document.createElement('div');
+  item.className = 'reminder-item';
+  if (reminder.completed) item.classList.add('reminder-item--completed');
+  item.dataset.id = reminder.id;
+
+  const checkbox = document.createElement('div');
+  checkbox.className = 'reminder-item__checkbox';
+  checkbox.dataset.action = 'toggle';
+  checkbox.innerHTML = `
+    <svg class="icon icon--md">
+      <use href="#icon-${reminder.completed ? 'check-circle-filled' : 'circle'}"/>
+    </svg>
+  `;
+
+  const content = document.createElement('div');
+  content.className = 'reminder-item__content';
+  content.dataset.action = 'edit';
+
+  const title = document.createElement('div');
+  title.className = 'reminder-item__title';
+  title.textContent = reminder.title;
+  content.appendChild(title);
+
+  if (reminder.notes) {
+    const notes = document.createElement('div');
+    notes.className = 'reminder-item__notes';
+    notes.textContent = reminder.notes;
+    content.appendChild(notes);
+  }
+
+  if (reminder.dueDate) {
+    const date = document.createElement('div');
+    date.className = 'reminder-item__date';
+    date.textContent = formatReminderDate(reminder.dueDate);
+    content.appendChild(date);
+  }
+
+  item.appendChild(checkbox);
+  item.appendChild(content);
+
+  return item;
+}
+
+function attachReminderListeners() {
+  document.querySelectorAll('.reminder-item').forEach(item => {
+    const id = item.dataset.id;
+
+    // Checkbox toggle
+    const checkbox = item.querySelector('[data-action="toggle"]');
+    if (checkbox) {
+      checkbox.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleReminder(id);
+      });
+    }
+
+    // Edit on text click
+    const content = item.querySelector('[data-action="edit"]');
+    if (content) {
+      content.addEventListener('click', () => {
+        const reminder = remindersCache.find(r => r.id === id);
+        if (reminder) openReminderModal(reminder);
+      });
+    }
+  });
+}
+
+async function toggleReminder(id) {
+  const requestKey = `toggle:${id}`;
+
+  // Prevent duplicate requests
+  if (remindersPendingRequests.has(requestKey)) {
+    console.log('Toggle already in progress for', id);
+    return;
+  }
+
+  const apiUrl = CONFIG.apis?.reminders;
+  if (!apiUrl) return;
+
+  // Find reminder in cache
+  const reminder = remindersCache.find(r => r.id === id);
+  if (!reminder) return;
+
+  // Optimistic update
+  const originalState = reminder.completed;
+  reminder.completed = !originalState;
+  renderReminders(remindersCache);
+
+  remindersPendingRequests.add(requestKey);
+
+  try {
+    const response = await fetch(`${apiUrl}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ completed: !originalState })
+    });
+
+    if (!response.ok) throw new Error('Toggle failed');
+
+    // Refresh from server to ensure sync
+    await fetchReminders();
+  } catch (error) {
+    console.error('Error toggling reminder:', error);
+    // Revert optimistic update
+    reminder.completed = originalState;
+    renderReminders(remindersCache);
+  } finally {
+    remindersPendingRequests.delete(requestKey);
+  }
+}
+
+async function saveReminder(reminderData) {
+  const apiUrl = CONFIG.apis?.reminders;
+  if (!apiUrl) return false;
+
+  try {
+    const isNew = !reminderData.id;
+    const url = isNew ? apiUrl : `${apiUrl}/${encodeURIComponent(reminderData.id)}`;
+    const method = isNew ? 'POST' : 'PUT';
+
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reminderData)
+    });
+
+    if (!response.ok) throw new Error('Save failed');
+
+    fetchReminders();
+    return true;
+  } catch (error) {
+    console.error('Error saving reminder:', error);
+    return false;
+  }
+}
+
+async function deleteReminder(id) {
+  const apiUrl = CONFIG.apis?.reminders;
+  if (!apiUrl) return;
+
+  try {
+    await fetch(`${apiUrl}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    fetchReminders();
+  } catch (error) {
+    console.error('Error deleting reminder:', error);
+  }
+}
+
+function formatReminderDate(isoString) {
+  const date = new Date(isoString);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const reminderDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const dayDiff = Math.floor((reminderDay - today) / (1000 * 60 * 60 * 24));
+
+  let dateLabel = '';
+  if (dayDiff === 0) dateLabel = 'Today';
+  else if (dayDiff === 1) dateLabel = 'Tomorrow';
+  else if (dayDiff === -1) dateLabel = 'Yesterday';
+  else if (dayDiff > 1 && dayDiff <= 7) {
+    // Show day of week for next week
+    dateLabel = date.toLocaleDateString('en-US', { weekday: 'long' });
+  } else {
+    dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  const timeStr = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+
+  return `${dateLabel}, ${timeStr}`;
+}
+
+function openReminderModal(reminder = null) {
+  currentReminderEdit = reminder;
+
+  const modal = document.getElementById('reminder-modal');
+  const titleInput = document.getElementById('reminder-title-input');
+  const notesInput = document.getElementById('reminder-notes-input');
+  const dateInput = document.getElementById('reminder-date-input');
+  const timeInput = document.getElementById('reminder-time-input');
+  const deleteBtn = document.getElementById('reminder-delete-btn');
+  const modalTitle = document.getElementById('reminder-modal-title');
+
+  if (!modal) return;
+
+  // Set modal title
+  if (modalTitle) {
+    modalTitle.textContent = reminder ? 'Edit Reminder' : 'New Reminder';
+  }
+
+  // Populate fields
+  if (reminder) {
+    if (titleInput) titleInput.value = reminder.title;
+    if (notesInput) notesInput.value = reminder.notes || '';
+
+    if (reminder.dueDate) {
+      const date = new Date(reminder.dueDate);
+      if (dateInput) dateInput.value = date.toISOString().split('T')[0];
+      if (timeInput) timeInput.value = date.toTimeString().slice(0, 5);
+    }
+
+    if (deleteBtn) deleteBtn.style.display = 'block';
+  } else {
+    if (titleInput) titleInput.value = '';
+    if (notesInput) notesInput.value = '';
+    if (dateInput) dateInput.value = '';
+    if (timeInput) timeInput.value = '';
+    if (deleteBtn) deleteBtn.style.display = 'none';
+  }
+
+  modal.classList.add('active');
+
+  // Focus title input
+  setTimeout(() => titleInput?.focus(), 100);
+}
+
+function closeReminderModal() {
+  const modal = document.getElementById('reminder-modal');
+  if (modal) modal.classList.remove('active');
+  currentReminderEdit = null;
+}
+
+function setupReminderModal() {
+  const modal = document.getElementById('reminder-modal');
+  const closeBtn = document.getElementById('reminder-close-btn');
+  const saveBtn = document.getElementById('reminder-save-btn');
+  const deleteBtn = document.getElementById('reminder-delete-btn');
+  const cancelBtn = document.getElementById('reminder-cancel-btn');
+  const backdrop = modal?.querySelector('.modal__backdrop');
+
+  if (closeBtn) closeBtn.addEventListener('click', closeReminderModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeReminderModal);
+  if (backdrop) backdrop.addEventListener('click', closeReminderModal);
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      const titleInput = document.getElementById('reminder-title-input');
+      const notesInput = document.getElementById('reminder-notes-input');
+      const dateInput = document.getElementById('reminder-date-input');
+      const timeInput = document.getElementById('reminder-time-input');
+
+      const title = titleInput?.value.trim();
+      if (!title) {
+        alert('Please enter a title');
+        return;
+      }
+
+      let dueDate = null;
+      if (dateInput?.value) {
+        // Combine date and time, or use default 9:00 AM if no time
+        const timeValue = timeInput?.value || '09:00';
+        dueDate = `${dateInput.value}T${timeValue}:00`;
+      }
+
+      const reminderData = {
+        title,
+        notes: notesInput?.value.trim() || '',
+        dueDate
+      };
+
+      if (currentReminderEdit) {
+        reminderData.id = currentReminderEdit.id;
+      }
+
+      if (await saveReminder(reminderData)) {
+        closeReminderModal();
+      }
+    });
+  }
+
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      if (!currentReminderEdit) return;
+
+      if (confirm('Delete this reminder?')) {
+        await deleteReminder(currentReminderEdit.id);
+        closeReminderModal();
+      }
+    });
+  }
 }
 
 // ============================================
@@ -1610,15 +1730,7 @@ function setupQRModal() {
 // UTILITY FUNCTIONS
 // ============================================
 
-function setTextContent(id, text) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = text;
-}
-
-function setInnerHTML(id, html) {
-  const el = document.getElementById(id);
-  if (el) el.innerHTML = html;
-}
+// setTextContent, setInnerHTML are defined in shared/core.js
 
 function updateDate() {
   const options = { weekday: 'long', month: 'long', day: 'numeric' };
@@ -1627,13 +1739,144 @@ function updateDate() {
 }
 
 // ============================================
+// SLEEP MODE
+// ============================================
+
+/**
+ * Check if we're in sleep hours and pause/resume accordingly
+ */
+async function checkSleepHours() {
+  const sleepConfig = CONFIG?.sleepHours;
+
+  if (!sleepConfig || !sleepConfig.enabled) {
+    // Sleep mode disabled
+    if (isSleeping) {
+      await resumeFromSleep();
+    }
+    applyDisplayState('normal');
+    return;
+  }
+
+  try {
+    const response = await fetch('http://192.168.1.137:8889/api/sleep/check');
+    if (!response.ok) throw new Error('Sleep check failed');
+
+    const status = await response.json();
+    const newState = status.state || 'normal';
+
+    // Apply CSS-based display state (dim overlay, sleep blackout)
+    applyDisplayState(newState);
+
+    // Only pause polling when display is off (sleep state)
+    if (newState === 'sleep' && !isSleeping) {
+      console.log('[Sleep] Entering sleep mode');
+      await enterSleepMode();
+    } else if (newState !== 'sleep' && isSleeping) {
+      console.log('[Sleep] Exiting sleep mode');
+      await resumeFromSleep();
+    }
+  } catch (error) {
+    console.error('[Sleep] Error checking sleep hours:', error);
+  }
+}
+
+/**
+ * Apply CSS-based display state (normal, dim, sleep)
+ */
+function applyDisplayState(state) {
+  if (state === currentDisplayState) return;
+
+  // Remove all display state classes
+  document.body.classList.remove('display--dim', 'display--sleep');
+
+  // Apply new state
+  if (state === 'dim') {
+    document.body.classList.add('display--dim');
+    console.log('[Sleep] Display dimmed via CSS');
+  } else if (state === 'sleep') {
+    document.body.classList.add('display--sleep');
+    console.log('[Sleep] Display blacked out via CSS');
+  } else {
+    console.log('[Sleep] Display at normal brightness');
+  }
+
+  currentDisplayState = state;
+}
+
+/**
+ * Enter sleep mode - pause all polling and turn off display
+ */
+async function enterSleepMode() {
+  isSleeping = true;
+
+  // Clear all polling intervals
+  Object.keys(intervals).forEach(key => {
+    if (intervals[key]) {
+      clearInterval(intervals[key]);
+      intervals[key] = null;
+    }
+  });
+
+  // Close WebSocket connection
+  if (notifySocket) {
+    notifySocket.close();
+    notifySocket = null;
+  }
+
+  console.log('[Sleep] All polling paused, WebSocket closed');
+}
+
+/**
+ * Resume from sleep mode - restart all polling and turn on display
+ */
+async function resumeFromSleep() {
+  isSleeping = false;
+
+  // Refresh all data
+  await Promise.all([
+    fetchCalendar(),
+    fetchWeather(),
+    fetchNote(),
+    fetchRecipe(),
+    fetchShipments(),
+    fetchNotifications(),
+    fetchAllDevices().then(updateAllDeviceTiles),
+  ]);
+
+  // Restart polling intervals
+  intervals.calendar = setInterval(fetchCalendar, 21600000);
+  intervals.weather = setInterval(fetchWeather, 1800000);
+  intervals.note = setInterval(fetchNote, 30000);
+  intervals.recipe = setInterval(fetchRecipe, 3600000);
+  intervals.devices = setInterval(() => {
+    fetchAllDevices().then(updateAllDeviceTiles);
+  }, 10000);
+  intervals.shipping = setInterval(fetchShipments, 300000);
+  intervals.notifications = setInterval(fetchNotifications, 300000);
+
+  // Reconnect WebSocket
+  connectNotifyWebSocket();
+
+  console.log('[Sleep] Resumed all polling and WebSocket');
+}
+
+// ============================================
 // INITIALIZATION
 // ============================================
 
 async function init() {
   try {
-    // 1. Load config first
-    await loadConfig();
+    // 1. Load config first (using shared/core.js loadConfig)
+    await loadConfig('config.json');
+
+    // Ensure layout has defaults if not configured
+    if (!CONFIG.layout) {
+      CONFIG.layout = {
+        topRow: { tiles: [] },
+        middleRow: { columns: [1, 1, 1, 1], tiles: [] },
+        bottomRow: { columns: [1, 1, 1, 1], tiles: [] }
+      };
+    }
 
     // 2. Apply config to header
     setTextContent('home-title', CONFIG.home?.title || 'Home Dashboard');
@@ -1646,6 +1889,7 @@ async function init() {
     setupBrightnessSlider();
     setupNoteModal();
     setupQRModal();
+    setupReminderModal();
 
     // 5. Initialize all widgets in parallel
     await Promise.all([
@@ -1655,6 +1899,7 @@ async function init() {
       fetchRecipe(),
       fetchShipments(),
       fetchNotifications(),
+      fetchReminders(),
       fetchAllDevices().then(updateAllDeviceTiles),
     ]);
 
@@ -1668,12 +1913,17 @@ async function init() {
     }, 10000);                                                    // 10 sec
     intervals.shipping = setInterval(fetchShipments, 300000);    // 5 min
     intervals.notifications = setInterval(fetchNotifications, 300000); // 5 min fallback
+    intervals.reminders = setInterval(fetchReminders, 30000);    // 30 sec
 
     // 7. Update date hourly
     setInterval(updateDate, 3600000);
 
     // 8. Connect WebSocket for real-time notifications
     connectNotifyWebSocket();
+
+    // 9. Start sleep hours checker (runs every minute)
+    sleepCheckInterval = setInterval(checkSleepHours, 60000);
+    checkSleepHours(); // Check immediately
 
     console.log('Skylight Home v2 initialized');
   } catch (error) {
