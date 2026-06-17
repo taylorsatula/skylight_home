@@ -1,0 +1,16 @@
+[Unit]
+Description=Skylight Home Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=server_admin
+WorkingDirectory=/home/server_admin/backend
+ExecStart=/home/server_admin/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8894
+Restart=always
+RestartSec=5
+Environment=PORT=8894
+Environment=TMDB_API_KEY=faee8ffe9481e8754d6f68c63dbc6504
+
+[Install]
+WantedBy=multi-user.target

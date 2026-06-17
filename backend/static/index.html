@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Skylight">
+  <meta name="theme-color" content="#1a1a2e">
+  <title>Skylight Admin</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icons/icon-192.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- SVG Icons -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <defs>
+    <!-- Navigation icons -->
+    <symbol id="icon-gallery" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor"/></symbol>
+    <symbol id="icon-memo" viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="1.5" rx="2"/><line x1="8" y1="9" x2="16" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="13" x2="14" y2="13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="17" x2="11" y2="17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="icon-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="20" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="18" x2="20" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="4" cy="6" r="1.5" fill="currentColor"/><circle cx="4" cy="12" r="1.5" fill="currentColor"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/></symbol>
+    <symbol id="icon-movie" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="10,9 10,15 16,12" fill="currentColor"/></symbol>
+
+    <!-- Action icons -->
+    <symbol id="icon-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="icon-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="icon-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="icon-edit" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="icon-warning" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="9" x2="12" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></symbol>
+    <symbol id="icon-question" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="17" r="0.5" fill="currentColor"/></symbol>
+
+    <!-- Drag handle -->
+    <symbol id="icon-drag" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1" fill="currentColor"/><circle cx="15" cy="6" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="18" r="1" fill="currentColor"/><circle cx="15" cy="18" r="1" fill="currentColor"/></symbol>
+  </defs>
+</svg>
+
+<!-- App Shell -->
+<div id="app">
+
+  <!-- Header -->
+  <header class="app-header">
+    <h1 class="app-title">Skylight</h1>
+    <span class="app-subtitle">Admin</span>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content">
+
+    <!-- ==================== GALLERY VIEW ==================== -->
+    <section id="view-gallery" class="view view--active">
+      <div class="view-header">
+        <h2 class="view-title">Gallery</h2>
+        <label class="btn btn--upload" for="photo-upload-input">
+          <svg class="icon icon--sm"><use href="#icon-camera"/></svg>
+          Add Photo
+        </label>
+        <input type="file" id="photo-upload-input" accept="image/*" multiple hidden>
+      </div>
+
+      <div id="gallery-grid" class="gallery-grid">
+        <!-- Photos rendered here -->
+      </div>
+
+      <div id="gallery-empty" class="empty-state" style="display:none">
+        <svg class="empty-state__icon"><use href="#icon-gallery"/></svg>
+        <p class="empty-state__text">No photos yet</p>
+        <p class="empty-state__hint">Tap "Add Photo" to upload</p>
+      </div>
+    </section>
+
+    <!-- ==================== MEMO VIEW ==================== -->
+    <section id="view-memo" class="view">
+      <div class="view-header">
+        <h2 class="view-title">Memo</h2>
+        <button class="btn btn--save" id="memo-save-btn">Save</button>
+      </div>
+
+      <form id="memo-form" class="memo-form">
+        <input type="text" id="memo-title" class="input input--title" placeholder="Title…">
+        <textarea id="memo-content" class="input input--textarea" placeholder="Write something…"></textarea>
+      </form>
+    </section>
+
+    <!-- ==================== LIST VIEW ==================== -->
+    <section id="view-list" class="view">
+      <div class="view-header">
+        <h2 class="view-title">List</h2>
+        <button class="btn btn--add" id="list-add-btn">
+          <svg class="icon icon--xs"><use href="#icon-plus"/></svg>
+          Add
+        </button>
+      </div>
+
+      <ul id="list-items" class="list-items">
+        <!-- Items rendered here -->
+      </ul>
+
+      <div id="list-empty" class="empty-state" style="display:none">
+        <svg class="empty-state__icon"><use href="#icon-list"/></svg>
+        <p class="empty-state__text">No items yet</p>
+        <p class="empty-state__hint">Tap "Add" to create one</p>
+      </div>
+    </section>
+
+    <!-- ==================== MOVIE VIEW ==================== -->
+    <section id="view-movie" class="view">
+      <div class="view-header">
+        <h2 class="view-title">Movie Night</h2>
+        <button class="btn btn--save" id="movie-save-btn">Save</button>
+      </div>
+
+      <div class="movie-editor">
+        <!-- Poster Preview -->
+        <div id="movie-poster-preview" class="movie-poster-preview">
+          <img id="movie-poster-img" src="" alt="" hidden>
+          <div id="movie-poster-placeholder" class="movie-poster-placeholder">
+            <svg class="icon icon--xl"><use href="#icon-question"/></svg>
+          </div>
+        </div>
+
+        <!-- Search -->
+        <div class="movie-search-row">
+          <div class="search-field">
+            <svg class="icon icon--sm search-icon"><use href="#icon-search"/></svg>
+            <input type="text" id="movie-search-input" class="input input--search" placeholder="Search movie title…" autocomplete="off">
+          </div>
+          <button class="btn btn--search" id="movie-search-btn">Search</button>
+        </div>
+
+        <!-- Search Results Dropdown -->
+        <div id="movie-search-results" class="search-results" style="display:none">
+          <!-- Results rendered here -->
+        </div>
+
+        <!-- Movie Fields -->
+        <div class="movie-fields">
+          <input type="text" id="movie-title" class="input" placeholder="Title">
+          <input type="number" id="movie-year" class="input" placeholder="Year" min="1900" max="2099">
+          <input type="url" id="movie-poster-url" class="input" placeholder="Poster URL (optional)">
+          <input type="number" id="movie-rating" class="input" placeholder="Rating (0-10)" step="0.1" min="0" max="10">
+          <textarea id="movie-blurb" class="input input--textarea-sm" placeholder="Description…"></textarea>
+        </div>
+
+        <!-- Validation Warning -->
+        <div id="movie-validation-warning" class="validation-warning" style="display:none">
+          <svg class="icon icon--sm"><use href="#icon-warning"/></svg>
+          <span>Movie not found in database. Press Save again to confirm.</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Tab Bar -->
+  <nav class="tab-bar">
+    <button class="tab tab--active" data-view="gallery">
+      <svg class="icon"><use href="#icon-gallery"/></svg>
+      <span>Gallery</span>
+    </button>
+    <button class="tab" data-view="memo">
+      <svg class="icon"><use href="#icon-memo"/></svg>
+      <span>Memo</span>
+    </button>
+    <button class="tab" data-view="list">
+      <svg class="icon"><use href="#icon-list"/></svg>
+      <span>List</span>
+    </button>
+    <button class="tab" data-view="movie">
+      <svg class="icon"><use href="#icon-movie"/></svg>
+      <span>Movie</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- Photo Delete Confirmation Modal -->
+<div id="modal-photo-delete" class="modal" style="display:none">
+  <div class="modal-backdrop"></div>
+  <div class="modal-sheet">
+    <h3 class="modal-title">Delete Photo?</h3>
+    <p class="modal-text">This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn--cancel modal-cancel">Cancel</button>
+      <button class="btn btn--danger modal-confirm-delete">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- List Item Edit Modal -->
+<div id="modal-list-edit" class="modal" style="display:none">
+  <div class="modal-backdrop"></div>
+  <div class="modal-sheet">
+    <h3 class="modal-title">Edit Item</h3>
+    <input type="text" id="list-edit-input" class="input" placeholder="Item text…">
+    <div class="modal-actions">
+      <button class="btn btn--cancel modal-cancel">Cancel</button>
+      <button class="btn btn--save modal-confirm-edit">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- List Item Add Modal -->
+<div id="modal-list-add" class="modal" style="display:none">
+  <div class="modal-backdrop"></div>
+  <div class="modal-sheet">
+    <h3 class="modal-title">New Item</h3>
+    <input type="text" id="list-add-input" class="input" placeholder="Item text…">
+    <div class="modal-actions">
+      <button class="btn btn--cancel modal-cancel">Cancel</button>
+      <button class="btn btn--save modal-confirm-add">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="toast" style="display:none">
+  <span id="toast-message"></span>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

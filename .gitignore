@@ -11,3 +11,10 @@ __pycache__/
 # APK files
 *.apk
 *.xapk
+
+# Backend data (runtime-generated)
+backend/data/
+
+# Static images served by dashboard (local only)
+backend/dashboard/photoframe_images/
+backend/dashboard/scratchpics/

@@ -188,3 +188,20 @@ v2/
 ## Code Hygiene
 
 Clean up dead code while you're in there. Don't leave it till later. You'll forget and then we'll have technical debt.
+
+## Planning & Revisions
+
+When revising implementation plans based on user feedback or changing requirements, always include a **"What Changed:"** summary with checkboxes showing what was added/removed/kept from the original plan.
+
+Example format:
+```
+**What changed:**
+- ❌ Removed settings UI modal (no HTML changes needed)
+- ❌ Removed modal setup functions (simpler app.js)
+- ❌ Removed CSS styling (no style.css changes needed)
+- ✅ Kept backend display control with vcgencmd
+- ✅ Kept frontend sleep check and interval management
+- ✅ Config-only approach for setting sleep hours
+```
+
+This helps quickly understand the evolution of the plan and makes it easy to see what scope changed between revisions.

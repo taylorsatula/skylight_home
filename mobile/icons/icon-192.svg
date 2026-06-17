@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="40" fill="#1a3a4a"/>
-  <circle cx="96" cy="76" r="32" fill="#ffd60a"/>
-  <path d="M76 100 h40 v16 a8 8 0 0 1 -8 8 h-24 a8 8 0 0 1 -8 -8 z" fill="#ffd60a"/>
-  <path d="M84 128 h24 v4 a4 4 0 0 1 -4 4 h-16 a4 4 0 0 1 -4 -4 z" fill="#ffd60a" opacity="0.7"/>
-  <text x="96" y="165" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="18" font-weight="600" fill="#ffffff">Skylight</text>
-</svg>
