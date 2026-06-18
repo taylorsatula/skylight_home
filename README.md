@@ -15,12 +15,12 @@ on a phone). Changes propagate to the dashboard instantly over **Server-Sent Eve
 ```
  ┌─────────────┐   /admin   ┌────────────────┐   SQLite   ┌──────────────┐
  │  Phone PWA  │ ─────────▶ │ FastAPI (Pi)   │ ◀────────▶ │  skylight.db │
- │ (admin UI) │ ◀──SSE──── │  port 8894     │            └──────────────┘
+ │ (admin UI)  │ ◀──SSE──── │  port 8894     │            └──────────────┘
  └─────────────┘            └───────┬────────┘
                                     │ serves /
                                     ▼
                             ┌──────────────────────┐
-                            │ Dashboard (webview on │
+                            │ Dashboard (webview on│
                             │ Skylight Calendar)   │
                             └──────────────────────┘
 ```
@@ -88,19 +88,19 @@ dashboard refreshes without polling. Key endpoints:
 |--------|------------------------------|------------------------------------------|
 | GET    | `/`                          | Dashboard HTML                           |
 | GET    | `/admin`                     | Admin PWA (static mount)                 |
-| GET    | `/api/events`                | SSE stream (real-time push)             |
+| GET    | `/api/events`                | SSE stream (real-time push)              |
 | GET    | `/api/health`                | Health check                             |
 | GET    | `/api/photos`                | List photos (ordered)                    |
 | POST   | `/api/photos/upload`         | Upload image (≤10MB)                     |
 | PUT    | `/api/photos/reorder`        | Reorder by `{ order: [ids] }`            |
-| PUT/DEL| `/api/photos/{id}`          | Update sort / delete                     |
-| GET/PUT| `/api/memo`                  | Single memo (title + content)           |
+| PUT/DEL| `/api/photos/{id}`          | Update sort / delete                      |
+| GET/PUT| `/api/memo`                  | Single memo (title + content)            |
 | CRUD   | `/api/list-items[/{id}]`     | Checklist items                          |
-| PUT    | `/api/list-items/reorder`     | Reorder items                            |
+| PUT    | `/api/list-items/reorder`     | Reorder items                           |
 | GET/PUT| `/api/movie`                 | Single movie; posters auto-downloaded    |
-| GET    | `/api/movie/search?query=`  | TMDB movie search (needs `TMDB_API_KEY`)|
-| GET/PUT| `/api/display-override`      | Pin a screen or `null` for auto         |
-| GET    | `/photos/{file}` `/poster/{file}` | Serve stored images                |
+| GET    | `/api/movie/search?query=`  | TMDB movie search (needs `TMDB_API_KEY`)  |
+| GET/PUT| `/api/display-override`      | Pin a screen or `null` for auto          |
+| GET    | `/photos/{file}` `/poster/{file}` | Serve stored images                 |
 
 Database tables: `photos`, `memo` (singleton id=1), `list_items`, `movie`
 (singleton id=1), `settings` (holds `display_override`).
