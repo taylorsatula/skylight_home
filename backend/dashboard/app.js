@@ -18,20 +18,97 @@ let movieData = null;
 let memoData = null;
 let listItems = [];
 let weatherData = null;
+let displayOverride = null;  // Manual override from admin; cleared on schedule change
+
+// --- Schedule ---
+// Rules evaluated top-to-bottom; first match wins. Default: photo.
+// days: array of JS day-of-week (0=Sun … 6=Sat). Omit to match all days.
+// start/end: "HH:MM" in 24h. Range is inclusive start, exclusive end.
+const SCHEDULE = [
+  // Morning weather — every day 7:00–9:30
+  { type: 'weather', start: '07:00', end: '09:30' },
+  // Tuesday trash night — Tue 5:00pm–midnight
+  { type: 'trash', days: [2], start: '17:00', end: '23:59' },
+  // Wednesday movie night — Wed 7:30pm–11:00pm
+  { type: 'movie', days: [3], start: '19:30', end: '23:00' },
+  // Thursday movie night — Thu 5:00pm–11:00pm
+  { type: 'movie', days: [4], start: '17:00', end: '23:00' },
+];
+
+function getScheduledScreen() {
+  // Manual override takes precedence
+  if (displayOverride) return displayOverride;
+
+  const now = new Date();
+  const day = now.getDay();
+  const minutes = now.getHours() * 60 + now.getMinutes();
+
+  for (const rule of SCHEDULE) {
+    if (rule.days && !rule.days.includes(day)) continue;
+    const [sh, sm] = rule.start.split(':').map(Number);
+    const [eh, em] = rule.end.split(':').map(Number);
+    if (minutes >= sh * 60 + sm && minutes < eh * 60 + em) return rule.type;
+  }
+  return 'photo';
+}
+
+function getScheduleSlot() {
+  // Return a string key identifying the current schedule time slot.
+  // Used to detect when we've crossed into a new slot.
+  const now = new Date();
+  const day = now.getDay();
+  const hour = now.getHours();
+  const minute = now.getMinutes();
+  // Round down to nearest 30-min block for slot detection
+  const slot = Math.floor(minute / 30);
+  return `${day}-${hour}-${slot}`;
+}
+
+function renderScreen(type) {
+  switch (type) {
+    case 'weather':
+      if (weatherData) showWeather(weatherData);
+      else showPhoto();
+      break;
+    case 'movie':
+      if (movieData) showMovie();
+      else showPhoto();
+      break;
+    case 'memo':
+      if (memoData) showMemo(memoData.title, memoData.content);
+      else showPhoto();
+      break;
+    case 'list':
+      if (listItems.length) showList(listItems.map(i => i.text));
+      else showPhoto();
+      break;
+    case 'trash':
+      showTrashNight();
+      break;
+    default:
+      showPhoto();
+  }
+}
+
+function showScheduledScreen() {
+  renderScreen(getScheduledScreen());
+}
 
 async function fetchDashboardData() {
   try {
-    const [photosRes, movieRes, memoRes, listRes] = await Promise.all([
+    const [photosRes, movieRes, memoRes, listRes, overrideRes] = await Promise.all([
       fetch('/api/photos').then(r => r.ok ? r.json() : []),
       fetch('/api/movie').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/memo').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/list-items').then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch('/api/display-override').then(r => r.ok ? r.json() : {}).catch(() => ({})),
     ]);
 
     photoUrls = photosRes.map(p => `/photos/${p.filename}`);
     movieData = movieRes;
     memoData = memoRes;
     listItems = listRes;
+    displayOverride = overrideRes.screen || null;
   } catch (err) {
     console.error('Failed to fetch dashboard data:', err);
     showError();
@@ -77,6 +154,17 @@ async function fetchWeather() {
   } catch (err) {
     console.error('Fetch weather error:', err);
   }
+}
+
+// --- Trash Night Interrupt ---
+function showTrashNight() {
+  showInterrupt({
+    title: 'Trash Night',
+    message: 'Don\'t forget to take out the trash tonight.',
+    meta: 'Dismiss when done',
+    icon: ICONS.trash,
+    priority: 'urgent',
+  });
 }
 
 // --- Error State ---
@@ -231,6 +319,102 @@ function dismissInterrupt() {
 
 // --- Photo Frame Interrupt ---
 let currentPhotoIndex = 0;
+
+// Swipe state for photo navigation
+const SWIPE_THRESHOLD = 60; // px to count as a swipe
+let swipeStartX = null;
+let swipeStartY = null;
+let isSwiping = false;
+
+function initPhotoSwipeListeners() {
+  const el = document.querySelector('.interrupt');
+  if (!el) return;
+
+  el.addEventListener('touchstart', (e) => {
+    swipeStartX = e.touches[0].clientX;
+    swipeStartY = e.touches[0].clientY;
+    isSwiping = true;
+  }, { passive: true });
+
+  el.addEventListener('touchmove', (e) => {
+    if (!isSwiping || !swipeStartX) return;
+    const dx = Math.abs(e.touches[0].clientX - swipeStartX);
+    const dy = Math.abs(e.touches[0].clientY - swipeStartY);
+    if (dx > dy && dx > 10) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  el.addEventListener('touchend', (e) => {
+    if (!isSwiping || !swipeStartX) return;
+    const dx = e.changedTouches[0].clientX - swipeStartX;
+    const dy = Math.abs(e.changedTouches[0].clientY - swipeStartY);
+    swipeStartX = null;
+    swipeStartY = null;
+    isSwiping = false;
+
+    // Only handle swipes when showing photos
+    if (!currentInterrupt || currentInterrupt.type !== 'photo') return;
+    if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < dy) return;
+    if (photoUrls.length <= 1) return;
+
+    const countdownBar = document.getElementById('countdown-bar');
+    const countdownFill = document.getElementById('countdown-fill');
+
+    if (dx < 0) {
+      // Swipe left → next photo
+      currentPhotoIndex = (currentPhotoIndex + 1) % photoUrls.length;
+    } else {
+      // Swipe right → previous photo
+      currentPhotoIndex = (currentPhotoIndex - 1 + photoUrls.length) % photoUrls.length;
+    }
+
+    navigatePhotoWithSlide(dx < 0 ? 'left' : 'right', countdownBar, countdownFill);
+  }, { passive: true });
+}
+
+function navigatePhotoWithSlide(direction, countdownBar, countdownFill) {
+  const content = document.getElementById('interrupt-content');
+  const existingImg = content.querySelector('.photo-frame img');
+  if (!existingImg) return;
+
+  const nextUrl = photoUrls[currentPhotoIndex];
+  const next = new Image();
+  next.onload = () => {
+    const container = existingImg.parentElement;
+
+    const startX = direction === 'left' ? '100%' : '-100%';
+    const endX = direction === 'left' ? '-100%' : '100%';
+
+    const overlay = document.createElement('img');
+    overlay.src = nextUrl;
+    overlay.style.cssText = `
+      position:absolute;inset:0;width:100%;height:100%;
+      object-fit:cover;z-index:10;
+      transform:translateX(${startX});
+      transition:transform 3s cubic-bezier(0.4,0,0.2,1);
+    `;
+    container.appendChild(overlay);
+
+    void overlay.offsetHeight;
+
+    existingImg.style.transition = 'transform 3s cubic-bezier(0.4,0,0.2,1), opacity 3s ease';
+    existingImg.style.transform = `translateX(${endX})`;
+    existingImg.style.opacity = '0';
+    overlay.style.transform = 'translateX(0)';
+
+    setTimeout(() => {
+      existingImg.src = nextUrl;
+      existingImg.style.transition = 'none';
+      existingImg.style.transform = '';
+      existingImg.style.opacity = '';
+      overlay.remove();
+      startPhotoTimer(countdownBar, countdownFill);
+    }, 3100);
+  };
+  next.onerror = () => startPhotoTimer(countdownBar, countdownFill);
+  next.src = nextUrl;
+}
 
 function showPhoto() {
   const el = document.querySelector('.interrupt');
@@ -398,11 +582,114 @@ function startPhotoTimer(countdownBar, countdownFill) {
   }, PHOTO_INTERVAL);
 }
 
+// --- SSE Real-Time Updates ---
+let sseSource = null;
+
+function connectSSE() {
+  sseSource = new EventSource('/api/events');
+
+  sseSource.addEventListener('update', (e) => {
+    const eventType = e.data; // 'photos', 'memo', 'movie', 'list-items', 'display-override'
+    handleSSEUpdate(eventType);
+  });
+
+  sseSource.onerror = () => {
+    console.log('SSE connection lost — reconnecting…');
+    // EventSource auto-reconnects, no action needed
+  };
+}
+
+async function handleSSEUpdate(eventType) {
+  // Save previous state snapshots
+  const prev = {
+    photos: JSON.stringify(photoUrls),
+    memo: JSON.stringify(memoData),
+    movie: JSON.stringify(movieData),
+    list: JSON.stringify(listItems),
+    override: displayOverride,
+  };
+
+  // Fetch fresh data for the affected type
+  try {
+    switch (eventType) {
+      case 'photos': {
+        const res = await fetch('/api/photos').then(r => r.ok ? r.json() : []);
+        photoUrls = res.map(p => `/photos/${p.filename}`);
+        break;
+      }
+      case 'memo': {
+        const res = await fetch('/api/memo').then(r => r.ok ? r.json() : null).catch(() => null);
+        memoData = res;
+        break;
+      }
+      case 'movie': {
+        const res = await fetch('/api/movie').then(r => r.ok ? r.json() : null).catch(() => null);
+        movieData = res;
+        break;
+      }
+      case 'list-items': {
+        const res = await fetch('/api/list-items').then(r => r.ok ? r.json() : []).catch(() => []);
+        listItems = res;
+        break;
+      }
+      case 'display-override': {
+        const res = await fetch('/api/display-override').then(r => r.ok ? r.json() : {}).catch(() => ({}));
+        displayOverride = res.screen || null;
+        break;
+      }
+    }
+  } catch (err) {
+    console.error('SSE update fetch error:', err);
+    return;
+  }
+
+  // Check what actually changed and re-render if needed
+  const changed = {
+    photos: JSON.stringify(photoUrls) !== prev.photos,
+    memo: JSON.stringify(memoData) !== prev.memo,
+    movie: JSON.stringify(movieData) !== prev.movie,
+    list: JSON.stringify(listItems) !== prev.list,
+    override: displayOverride !== prev.override,
+  };
+
+  // If override changed, check if we need to switch screens
+  if (changed.override) {
+    const next = getScheduledScreen();
+    const current = currentInterrupt?.type;
+    if (next !== current) {
+      dismissInterrupt();
+      renderScreen(next);
+    }
+    return;
+  }
+
+  // Re-render current interrupt if its data changed
+  if (!currentInterrupt) return;
+
+  switch (currentInterrupt.type) {
+    case 'memo':
+      if (changed.memo && memoData) showMemo(memoData.title, memoData.content);
+      break;
+    case 'photo':
+      if (changed.photos) { currentPhotoIndex = 0; showPhoto(); }
+      break;
+    case 'movie':
+      if (changed.movie) showMovie();
+      break;
+    case 'list':
+      if (changed.list && listItems.length) showList(listItems.map(i => i.text));
+      break;
+  }
+}
+
 // --- Init ---
 document.addEventListener('DOMContentLoaded', async () => {
   renderDock();
 
   document.getElementById('interrupt-dismiss').addEventListener('click', dismissInterrupt);
+
+  // Photo swipe navigation
+  initPhotoSwipeListeners();
 
   // Clock
   updateClock();
@@ -411,12 +698,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Fetch live data from backend + weather
   await Promise.all([fetchDashboardData(), fetchWeather()]);
 
-  // Auto-show photo frame if we have photos, otherwise show memo
-  if (photoUrls.length > 0) {
-    showPhoto();
-  } else if (memoData) {
-    showMemo(memoData.title, memoData.content);
-  }
+  // Connect to SSE for real-time updates
+  connectSSE();
+
+  // Show scheduled screen
+  showScheduledScreen();
+
+  // Track schedule slot to detect boundary crossings (clears manual override)
+  let lastSlot = getScheduleSlot();
+
+  // Re-check schedule every minute and switch if it changed
+  setInterval(async () => {
+    const currentSlot = getScheduleSlot();
+
+    // If we crossed into a new time slot, clear any manual override
+    if (displayOverride && currentSlot !== lastSlot) {
+      try {
+        await fetch('/api/display-override', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ screen: null }),
+        });
+        displayOverride = null;
+      } catch (err) {
+        console.error('Failed to clear display override:', err);
+      }
+    }
+    lastSlot = currentSlot;
+
+    const next = getScheduledScreen();
+    const current = currentInterrupt?.type;
+    if (next !== current) {
+      dismissInterrupt();
+      renderScreen(next);
+    }
+  }, 60000);
 
   // Poll for updates every 30s — re-render current screen if data changed
   setInterval(async () => {

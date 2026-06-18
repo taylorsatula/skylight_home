@@ -17,6 +17,7 @@ let state = {
   memo: null,
   listItems: [],
   movie: null,
+  displayOverride: null,
 };
 
 let dragState = { dragging: false, sourceId: null };
@@ -36,11 +37,13 @@ async function init() {
     fetchMemo(),
     fetchListItems(),
     fetchMovie(),
+    fetchDisplayOverride(),
   ]);
   renderGallery();
   renderMemo();
   renderList();
   renderMovie();
+  renderDisplayOverride();
   registerServiceWorker();
 }
 
@@ -114,6 +117,7 @@ function setupModals() {
 async function fetchPhotos() {
   try {
     const res = await fetch(`${API_BASE}/api/photos`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     state.photos = await res.json();
   } catch (e) { console.error('Fetch photos error:', e); }
 }
@@ -204,6 +208,7 @@ function setupGalleryInteractions() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ order: ids }),
         });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         state.photos = await res.json();
         renderGallery();
       } catch (err) {
@@ -345,6 +350,7 @@ async function endTouchDrag() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ order: ids }),
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     state.photos = await res.json();
     renderGallery();
   } catch (err) {
@@ -409,6 +415,7 @@ async function confirmDeletePhoto() {
 async function fetchMemo() {
   try {
     const res = await fetch(`${API_BASE}/api/memo`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     state.memo = await res.json();
   } catch (e) { console.error('Fetch memo error:', e); }
 }
@@ -451,6 +458,7 @@ document.getElementById('memo-save-btn')?.addEventListener('click', async () => 
 async function fetchListItems() {
   try {
     const res = await fetch(`${API_BASE}/api/list-items`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     state.listItems = await res.json();
   } catch (e) { console.error('Fetch list error:', e); }
 }
@@ -548,6 +556,33 @@ document.getElementById('list-add-btn')?.addEventListener('click', () => {
   setTimeout(() => document.getElementById('list-add-input').focus(), 300);
 });
 
+// Display override cards
+document.querySelectorAll('.display-card').forEach(card => {
+  card.addEventListener('click', async () => {
+    const screen = card.dataset.screen;
+    const screenValue = screen === 'auto' ? null : screen;
+
+    // Update UI immediately
+    document.querySelectorAll('.display-card').forEach(c => c.classList.remove('display-card--active'));
+    card.classList.add('display-card--active');
+
+    try {
+      const res = await fetch(`${API_BASE}/api/display-override`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ screen: screenValue }),
+      });
+      if (!res.ok) throw new Error('Update failed');
+      state.displayOverride = screenValue;
+      updateDisplayCurrentText(screenValue);
+      showToast(screenValue ? `Showing ${screenValue}` : 'Auto mode restored');
+    } catch (err) {
+      console.error('Display override error:', err);
+      showToast('Failed to update display');
+    }
+  });
+});
+
 async function confirmAddListItem() {
   const input = document.getElementById('list-add-input');
   const text = input.value.trim();
@@ -613,6 +648,7 @@ async function confirmEditListItem() {
 async function fetchMovie() {
   try {
     const res = await fetch(`${API_BASE}/api/movie`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     state.movie = await res.json();
   } catch (e) { console.error('Fetch movie error:', e); }
 }
@@ -865,6 +901,44 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// ============================================
+// DISPLAY OVERRIDE
+// ============================================
+
+async function fetchDisplayOverride() {
+  try {
+    const res = await fetch(`${API_BASE}/api/display-override`);
+    if (!res.ok) return;
+    const data = await res.json();
+    state.displayOverride = data.screen;
+  } catch (err) {
+    console.error('Fetch display override error:', err);
+  }
+}
+
+function renderDisplayOverride() {
+  const activeScreen = state.displayOverride || 'auto';
+
+  // Set active card
+  document.querySelectorAll('.display-card').forEach(card => {
+    card.classList.toggle('display-card--active', card.dataset.screen === activeScreen);
+  });
+
+  // Update current text
+  updateDisplayCurrentText(state.displayOverride);
+}
+
+function updateDisplayCurrentText(override) {
+  const el = document.getElementById('display-current-text');
+  if (!el) return;
+  if (override) {
+    const labels = { photo: 'Photos', weather: 'Weather', memo: 'Memo', list: 'List', movie: 'Movie Night' };
+    el.textContent = `Overridden — showing ${labels[override] || override}`;
+  } else {
+    el.textContent = 'Following schedule';
+  }
 }
 
 // ============================================

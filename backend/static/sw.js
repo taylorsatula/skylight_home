@@ -3,7 +3,7 @@
  * Caches shell for offline access; API responses are not cached (always fresh).
  */
 
-const CACHE_NAME = 'skylight-v1';
+const CACHE_NAME = 'skylight-v2';
 const SHELL_FILES = [
   '/',
   '/index.html',

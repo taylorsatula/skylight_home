@@ -3,6 +3,7 @@ Skylight Home - Backend API
 FastAPI server with SQLite storage for dashboard content management.
 """
 
+import asyncio
 import os
 import uuid
 from pathlib import Path
@@ -38,8 +39,25 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
 PHOTOS_DIR = Path(DB_DIR) / "photos"
 PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
 
+POSTERS_DIR = Path(DB_DIR) / "posters"
+POSTERS_DIR.mkdir(parents=True, exist_ok=True)
+
 STATIC_DIR = Path(__file__).parent / "static"
 DASHBOARD_DIR = Path(__file__).parent / "dashboard"
+
+# --- SSE broadcast ---
+sse_subscribers: list[asyncio.Queue] = []
+
+async def broadcast_sse(event_type: str):
+    """Push an event to all connected SSE clients."""
+    dead = []
+    for q in sse_subscribers:
+        try:
+            q.put_nowait(event_type)
+        except asyncio.QueueFull:
+            dead.append(q)
+    for q in dead:
+        sse_subscribers.remove(q)
 
 # Serve Skylight dashboard at /
 def _serve_dashboard(filename: str) -> FileResponse:
@@ -101,6 +119,9 @@ class MovieData(BaseModel):
     tmdb_id: Optional[int] = None
     validated: bool = False
 
+class DisplayOverride(BaseModel):
+    screen: Optional[str] = None  # "photo", "weather", "movie", "memo", "list", or null for auto
+
 # ---------------------------------------------------------------------------
 # Startup
 # ---------------------------------------------------------------------------
@@ -113,9 +134,39 @@ async def startup():
 # Health check
 # ---------------------------------------------------------------------------
 
+@app.get("/poster/{filename:path}")
+async def serve_poster(filename: str):
+    poster_path = POSTERS_DIR / filename
+    if not poster_path.is_file():
+        raise HTTPException(status_code=404, detail="Poster not found")
+    return FileResponse(poster_path)
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok"}
+
+@app.get("/api/events")
+async def sse_endpoint():
+    """Server-Sent Events stream. Dashboard connects here for real-time updates."""
+    queue: asyncio.Queue = asyncio.Queue(maxsize=16)
+    sse_subscribers.append(queue)
+
+    async def event_generator():
+        # Send initial connection event
+        yield "data: connected\n\n"
+        try:
+            while True:
+                event_type = await queue.get()
+                yield f"event: update\ndata: {event_type}\n\n"
+        finally:
+            sse_subscribers.discard(queue)
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 # ---------------------------------------------------------------------------
 # Photos
@@ -150,6 +201,7 @@ async def upload_photo(file: UploadFile = File(...)):
             (unique_name, file.filename, file.content_type, len(contents), 0),
         )
         db.commit()
+        asyncio.create_task(broadcast_sse('photos'))
         row = db.execute("SELECT * FROM photos WHERE id = ?", (cursor.lastrowid,)).fetchone()
         return dict(row)
     except Exception as e:
@@ -162,6 +214,20 @@ async def upload_photo(file: UploadFile = File(...)):
 async def list_photos():
     db = get_db()
     try:
+        rows = db.execute("SELECT * FROM photos ORDER BY sort_order ASC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+# NOTE: /reorder must come BEFORE /{photo_id} or FastAPI treats "reorder" as a photo_id
+@app.put("/api/photos/reorder")
+async def reorder_photos(data: ReorderRequest):
+    db = get_db()
+    try:
+        for index, photo_id in enumerate(data.order):
+            db.execute("UPDATE photos SET sort_order = ? WHERE id = ?", (index, photo_id))
+        db.commit()
+        asyncio.create_task(broadcast_sse('photos'))
         rows = db.execute("SELECT * FROM photos ORDER BY sort_order ASC").fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -190,20 +256,9 @@ async def delete_photo(photo_id: int):
         filename = row["filename"]
         db.execute("DELETE FROM photos WHERE id = ?", (photo_id,))
         db.commit()
+        asyncio.create_task(broadcast_sse('photos'))
         (PHOTOS_DIR / filename).unlink(missing_ok=True)
         return {"deleted": photo_id}
-    finally:
-        db.close()
-
-@app.put("/api/photos/reorder")
-async def reorder_photos(data: ReorderRequest):
-    db = get_db()
-    try:
-        for index, photo_id in enumerate(data.order):
-            db.execute("UPDATE photos SET sort_order = ? WHERE id = ?", (index, photo_id))
-        db.commit()
-        rows = db.execute("SELECT * FROM photos ORDER BY sort_order ASC").fetchall()
-        return [dict(r) for r in rows]
     finally:
         db.close()
 
@@ -231,6 +286,7 @@ async def update_memo(data: MemoData):
             (data.title, data.content),
         )
         db.commit()
+        asyncio.create_task(broadcast_sse('memo'))
         row = db.execute("SELECT * FROM memo WHERE id = 1").fetchone()
         return dict(row)
     finally:
@@ -249,6 +305,7 @@ async def create_list_item(item: ListItemCreate):
             (item.text, 1 if item.completed else 0, item.sort_order or 0),
         )
         db.commit()
+        asyncio.create_task(broadcast_sse('list-items'))
         row = db.execute("SELECT * FROM list_items WHERE id = ?", (cursor.lastrowid,)).fetchone()
         return dict(row)
     except Exception as e:
@@ -290,6 +347,7 @@ async def update_list_item(item_id: int, data: ListItemUpdate):
         params.append(item_id)
         db.execute(f"UPDATE list_items SET {', '.join(updates)} WHERE id = ?", params)
         db.commit()
+        asyncio.create_task(broadcast_sse('list-items'))
         row = db.execute("SELECT * FROM list_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Item not found")
@@ -303,6 +361,7 @@ async def delete_list_item(item_id: int):
     try:
         db.execute("DELETE FROM list_items WHERE id = ?", (item_id,))
         db.commit()
+        asyncio.create_task(broadcast_sse('list-items'))
         return {"deleted": item_id}
     finally:
         db.close()
@@ -314,6 +373,7 @@ async def reorder_list_items(data: ReorderRequest):
         for index, item_id in enumerate(data.order):
             db.execute("UPDATE list_items SET sort_order = ? WHERE id = ?", (index, item_id))
         db.commit()
+        asyncio.create_task(broadcast_sse('list-items'))
         rows = db.execute("SELECT * FROM list_items ORDER BY sort_order ASC").fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -332,24 +392,66 @@ async def get_movie():
             raise HTTPException(status_code=404, detail="Movie not found")
         result = dict(row)
         result["validated"] = bool(result["validated"])
+        # Convert local filename to serveable URL (skip if already a full URL from legacy data)
+        if result["poster_url"] and not result["poster_url"].startswith("http"):
+            result["poster_url"] = f"/poster/{result['poster_url']}"
         return result
     finally:
         db.close()
+
+async def _download_poster(url: str) -> Optional[str]:
+    """Download a poster image from a URL and save it locally. Returns local filename or None."""
+    if not url:
+        return None
+    try:
+        async with AsyncClient(timeout=15) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                return None
+        # Determine extension from content type or default to jpg
+        ct = resp.headers.get("content-type", "image/jpeg")
+        ext = ".png" if "png" in ct else ".jpg"
+        filename = f"{uuid.uuid4().hex}{ext}"
+        dest = POSTERS_DIR / filename
+        dest.write_bytes(resp.content)
+        return filename
+    except Exception as e:
+        print(f"Poster download failed: {e}")
+        return None
 
 @app.put("/api/movie")
 async def update_movie(data: MovieData):
     db = get_db()
     try:
+        # Get current poster filename to clean up later
+        current = db.execute("SELECT poster_url FROM movie WHERE id = 1").fetchone()
+        current_filename = current["poster_url"] if current else None
+
+        # Download new poster locally if a remote URL is provided
+        local_filename = None
+        if data.poster_url:
+            local_filename = await _download_poster(data.poster_url)
+
+        # Delete old poster file if it was a local one
+        if current_filename and current_filename != local_filename:
+            old_path = POSTERS_DIR / current_filename
+            old_path.unlink(missing_ok=True)
+
+        # Store local filename (not remote URL) in DB
         db.execute(
             """UPDATE movie SET title = ?, year = ?, poster_url = ?, rating = ?,
                blurb = ?, tmdb_id = ?, validated = ?, updated_at = datetime('now')
                WHERE id = 1""",
-            (data.title, data.year, data.poster_url, data.rating, data.blurb, data.tmdb_id, 1 if data.validated else 0),
+            (data.title, data.year, local_filename, data.rating, data.blurb, data.tmdb_id, 1 if data.validated else 0),
         )
         db.commit()
+        asyncio.create_task(broadcast_sse('movie'))
         row = db.execute("SELECT * FROM movie WHERE id = 1").fetchone()
         result = dict(row)
         result["validated"] = bool(result["validated"])
+        # Convert local filename back to a serveable URL for the frontend
+        if result["poster_url"] and not result["poster_url"].startswith("http"):
+            result["poster_url"] = f"/poster/{result['poster_url']}"
         return result
     finally:
         db.close()
@@ -381,3 +483,38 @@ async def search_movie(query: str = Query(..., min_length=1)):
             "overview": m.get("overview", ""),
         })
     return {"results": results}
+
+# ---------------------------------------------------------------------------
+# Display Override
+# ---------------------------------------------------------------------------
+
+VALID_SCREENS = {'photo', 'weather', 'movie', 'memo', 'list'}
+
+@app.get("/api/display-override")
+async def get_display_override():
+    db = get_db()
+    try:
+        row = db.execute("SELECT value FROM settings WHERE key = ?", ('display_override',)).fetchone()
+        value = row['value'] if row else None
+        return {"screen": value if value in VALID_SCREENS else None}
+    finally:
+        db.close()
+
+@app.put("/api/display-override")
+async def set_display_override(data: DisplayOverride):
+    if data.screen is not None and data.screen not in VALID_SCREENS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid screen. Must be one of: {', '.join(sorted(VALID_SCREENS))}, or null",
+        )
+    db = get_db()
+    try:
+        db.execute(
+            "UPDATE settings SET value = ? WHERE key = 'display_override'",
+            (data.screen,),
+        )
+        db.commit()
+        asyncio.create_task(broadcast_sse('display-override'))
+        return {"screen": data.screen}
+    finally:
+        db.close()

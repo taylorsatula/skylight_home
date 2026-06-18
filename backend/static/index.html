@@ -11,6 +11,7 @@
   <title>Skylight Admin</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="icons/icon-192.svg">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
@@ -22,6 +23,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
   <defs>
     <!-- Navigation icons -->
+    <symbol id="icon-display" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="8,21 16,21 14,17 10,17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
     <symbol id="icon-gallery" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor"/></symbol>
     <symbol id="icon-memo" viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="1.5" rx="2"/><line x1="8" y1="9" x2="16" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="13" x2="14" y2="13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="17" x2="11" y2="17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
     <symbol id="icon-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="20" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="18" x2="20" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="4" cy="6" r="1.5" fill="currentColor"/><circle cx="4" cy="12" r="1.5" fill="currentColor"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/></symbol>
@@ -112,6 +115,91 @@
     </section>
 
     <!-- ==================== MOVIE VIEW ==================== -->
+    <!-- Display Override -->
+    <section id="view-display" class="view">
+      <div class="view-header">
+        <h2 class="view-title">Display</h2>
+      </div>
+
+      <!-- Current state indicator -->
+      <div id="display-current" class="display-current">
+        <svg class="icon icon--sm"><use href="#icon-display"/></svg>
+        <span id="display-current-text">Loading…</span>
+      </div>
+
+      <!-- Screen selector grid -->
+      <div id="display-options" class="display-options">
+        <button class="display-card display-card--active" data-screen="auto">
+          <div class="display-card__icon">
+            <svg class="icon icon--md"><use href="#icon-check"/></svg>
+          </div>
+          <div class="display-card__label">Auto</div>
+          <div class="display-card__sublabel">Follow schedule</div>
+        </button>
+        <button class="display-card" data-screen="photo">
+          <div class="display-card__icon">
+            <svg class="icon icon--md"><use href="#icon-gallery"/></svg>
+          </div>
+          <div class="display-card__label">Photos</div>
+          <div class="display-card__sublabel">Photo frame</div>
+        </button>
+        <button class="display-card" data-screen="weather">
+          <div class="display-card__icon">
+            <svg class="icon icon--md"><use href="#icon-sun"/></svg>
+          </div>
+          <div class="display-card__label">Weather</div>
+          <div class="display-card__sublabel">Current conditions</div>
+        </button>
+        <button class="display-card" data-screen="memo">
+          <div class="display-card__icon">
+            <svg class="icon icon--md"><use href="#icon-memo"/></svg>
+          </div>
+          <div class="display-card__label">Memo</div>
+          <div class="display-card__sublabel">Note</div>
+        </button>
+        <button class="display-card" data-screen="list">
+          <div class="display-card__icon">
+            <svg class="icon icon--md"><use href="#icon-list"/></svg>
+          </div>
+          <div class="display-card__label">List</div>
+          <div class="display-card__sublabel">Checklist</div>
+        </button>
+        <button class="display-card" data-screen="movie">
+          <div class="display-card__icon">
+            <svg class="icon icon--md"><use href="#icon-movie"/></svg>
+          </div>
+          <div class="display-card__label">Movie</div>
+          <div class="display-card__sublabel">Movie night</div>
+        </button>
+      </div>
+
+      <!-- Schedule info -->
+      <div class="display-schedule">
+        <h3 class="display-schedule__title">Schedule</h3>
+        <div class="display-schedule__item">
+          <span class="display-schedule__time">7:00 – 9:30 AM</span>
+          <span class="display-schedule__screen">Weather</span>
+        </div>
+        <div class="display-schedule__item">
+          <span class="display-schedule__time">Tue 5:00 PM – midnight</span>
+          <span class="display-schedule__screen">Trash Night</span>
+        </div>
+        <div class="display-schedule__item">
+          <span class="display-schedule__time">Wed 7:30 – 11:00 PM</span>
+          <span class="display-schedule__screen">Movie</span>
+        </div>
+        <div class="display-schedule__item">
+          <span class="display-schedule__time">Thu 5:00 – 11:00 PM</span>
+          <span class="display-schedule__screen">Movie</span>
+        </div>
+        <div class="display-schedule__item">
+          <span class="display-schedule__time">All other times</span>
+          <span class="display-schedule__screen">Photos</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Movie Night -->
     <section id="view-movie" class="view">
       <div class="view-header">
         <h2 class="view-title">Movie Night</h2>
@@ -177,6 +265,10 @@
     <button class="tab" data-view="movie">
       <svg class="icon"><use href="#icon-movie"/></svg>
       <span>Movie</span>
+    </button>
+    <button class="tab" data-view="display">
+      <svg class="icon"><use href="#icon-display"/></svg>
+      <span>Display</span>
     </button>
   </nav>
 

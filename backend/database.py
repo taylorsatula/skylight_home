@@ -49,6 +49,11 @@ CREATE TABLE IF NOT EXISTS movie (
     validated INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT
+);
 """
 
 SEED_DATA_SQL = """
@@ -68,6 +73,8 @@ INSERT OR IGNORE INTO movie (id, title, year, poster_url, rating, blurb, validat
     'A motorcycle stunt rider turns to robbing banks as a way to provide for his lover and their newborn child, a decision that puts him on a collision course with an ambitious rookie cop navigating a department ruled by a corrupt detective.',
     1
 );
+
+INSERT OR IGNORE INTO settings (key, value) VALUES ('display_override', NULL);
 """
 
 
