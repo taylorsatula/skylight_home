@@ -340,9 +340,39 @@ body {
 
 
 /* ============================================
-   PHOTO FRAME
-   Full-screen image, calm mode
+   SCREEN
+   Standardized container for all non-photo interrupt screens.
+   Shared positioning, centering, and padding — lets us scale,
+   reposition, or resize all screens from one place.
    ============================================ */
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px;
+}
+
+/* Scrollable variant — top-aligned, hidden scrollbar */
+.screen--scroll {
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding-top: 120px;
+  padding-bottom: 120px;
+}
+
+.screen--scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ============================================
+   PHOTO FRAME
+   Full-screen image, calm mode (no .screen wrapper)
+   ============================================
 .photo-frame {
   position: fixed;
   inset: 0;
@@ -361,13 +391,6 @@ body {
    Poster left, info right
    ============================================ */
 .movie-poster {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 80px;
   gap: 48px;
 }
 
@@ -426,14 +449,6 @@ body {
    Simple multiline text display
    ============================================ */
 .memo {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80px;
   gap: var(--spacing-lg);
 }
 
@@ -473,16 +488,7 @@ body {
    LIST
    Unordered list interrupt
    ============================================ */
-.list {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80px;
-}
+
 
 .list__items {
   text-align: left;
@@ -729,8 +735,6 @@ body {
   flex-direction: column;
   align-items: center;
   gap: var(--spacing-xl);
-  transform: scale(2);
-  transform-origin: center center;
 }
 
 .weather-interrupt__header {
@@ -889,14 +893,6 @@ body {
    Grid of device tiles
    ============================================ */
 .ha-screen {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80px;
   gap: var(--spacing-xl);
 }
 

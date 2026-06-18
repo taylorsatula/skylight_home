@@ -235,9 +235,11 @@ function showError() {
   const content = document.getElementById('interrupt-content');
 
   content.innerHTML = `
-    <div class="memo">
-      <h2 class="memo__title">Connection Lost</h2>
-      <p class="memo__text">Unable to reach the backend. The page will retry automatically.</p>
+    <div class="screen">
+      <div class="memo">
+        <h2 class="memo__title">Connection Lost</h2>
+        <p class="memo__text">Unable to reach the backend. The page will retry automatically.</p>
+      </div>
     </div>
   `;
 
@@ -403,20 +405,22 @@ function showWeather({ temp, unit, condition, high, low, feelsLike, icon, nowPct
   `;
 
   content.innerHTML = `
-    <div class="weather-interrupt">
-      <div class="weather-interrupt__header">
-        <div class="weather-interrupt__icon">${icon || ICONS.sun}</div>
-        <div class="weather-interrupt__temp-group">
-          <span class="weather-interrupt__temp">${temp}</span>
-          <span class="weather-interrupt__unit">${unit || '°F'}</span>
+    <div class="screen">
+      <div class="weather-interrupt">
+        <div class="weather-interrupt__header">
+          <div class="weather-interrupt__icon">${icon || ICONS.sun}</div>
+          <div class="weather-interrupt__temp-group">
+            <span class="weather-interrupt__temp">${temp}</span>
+            <span class="weather-interrupt__unit">${unit || '°F'}</span>
+          </div>
+          <div class="weather-interrupt__info">
+            <span class="weather-interrupt__condition">${condition}</span>
+            <span class="weather-interrupt__range">H:<span class="weather-interrupt__range-high">${high}</span> L:${low}</span>
+            <span class="weather-interrupt__feels-like">Feels like ${feelsLike}°</span>
+          </div>
         </div>
-        <div class="weather-interrupt__info">
-          <span class="weather-interrupt__condition">${condition}</span>
-          <span class="weather-interrupt__range">H:<span class="weather-interrupt__range-high">${high}</span> L:${low}</span>
-          <span class="weather-interrupt__feels-like">Feels like ${feelsLike}°</span>
-        </div>
+        ${barHTML}
       </div>
-      ${barHTML}
     </div>
   `;
 
@@ -626,8 +630,10 @@ function showList(items) {
   const listHTML = items.map(item => `<li class="list__item">${item}</li>`).join('');
 
   content.innerHTML = `
-    <div class="list">
-      <ul class="list__items">${listHTML}</ul>
+    <div class="screen">
+      <div class="list">
+        <ul class="list__items">${listHTML}</ul>
+      </div>
     </div>
   `;
 
@@ -641,9 +647,11 @@ function showMemo(title, text) {
   const content = document.getElementById('interrupt-content');
 
   content.innerHTML = `
-    <div class="memo">
-      <h2 class="memo__title">${title}</h2>
-      <p class="memo__text">${text}</p>
+    <div class="screen">
+      <div class="memo">
+        <h2 class="memo__title">${title}</h2>
+        <p class="memo__text">${text}</p>
+      </div>
     </div>
   `;
 
@@ -676,17 +684,19 @@ function showMovie(movieIndex = 0) {
   const placeholderPoster = !movie.validated && !movie.poster_url;
 
   content.innerHTML = `
-    <div class="movie-poster">
-      <div class="movie-poster__frame">
-        ${placeholderPoster
-          ? `<div class="movie-poster__placeholder">?</div>`
-          : `<img class="movie-poster__image" src="${posterSrc}" alt="${movie.title}" />`}
-      </div>
-      <div class="movie-poster__info">
-        <h2 class="movie-poster__title">${movie.title}</h2>
-        ${movie.year ? `<span class="movie-poster__year">${movie.year}</span>` : ''}
-        ${movie.rating ? `<span class="movie-poster__rating">★ ${movie.rating.toFixed(1)}</span>` : ''}
-        <p class="movie-poster__blurb">${movie.blurb}</p>
+    <div class="screen">
+      <div class="movie-poster">
+        <div class="movie-poster__frame">
+          ${placeholderPoster
+            ? `<div class="movie-poster__placeholder">?</div>`
+            : `<img class="movie-poster__image" src="${posterSrc}" alt="${movie.title}" />`}
+        </div>
+        <div class="movie-poster__info">
+          <h2 class="movie-poster__title">${movie.title}</h2>
+          ${movie.year ? `<span class="movie-poster__year">${movie.year}</span>` : ''}
+          ${movie.rating ? `<span class="movie-poster__rating">★ ${movie.rating.toFixed(1)}</span>` : ''}
+          <p class="movie-poster__blurb">${movie.blurb}</p>
+        </div>
       </div>
     </div>
   `;
@@ -727,10 +737,12 @@ function showHA() {
   }).join('');
 
   content.innerHTML = `
-    <div class="ha-screen screen">
-      <div class="ha-screen__scenes">${scenesHTML}</div>
-      <hr class="ha-screen__divider" />
-      <div class="ha-screen__devices">${tiles}</div>
+    <div class="screen screen--scroll">
+      <div class="ha-screen">
+        <div class="ha-screen__scenes">${scenesHTML}</div>
+        <hr class="ha-screen__divider" />
+        <div class="ha-screen__devices">${tiles}</div>
+      </div>
     </div>
   `;
 
