@@ -5,6 +5,7 @@ FastAPI server with SQLite storage for dashboard content management.
 
 import asyncio
 import os
+import sqlite3
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -83,6 +84,10 @@ async def serve_photo_image(path: str):
 async def serve_scratch_pic(path: str):
     return _serve_dashboard(f"scratchpics/{path}")
 
+@app.get("/weather-icons/{path:path}")
+async def serve_weather_icon(path: str):
+    return _serve_dashboard(f"weather-icons/{path}")
+
 # Serve admin PWA at /admin
 if STATIC_DIR.exists():
     app.mount("/admin", StaticFiles(directory=str(STATIC_DIR), html=True), name="admin")
@@ -129,6 +134,54 @@ class DisplayOverride(BaseModel):
 @app.on_event("startup")
 async def startup():
     init_db()
+    # Start periodic HA sync (every 30s)
+    asyncio.create_task(_periodic_ha_sync())
+
+async def _periodic_ha_sync():
+    """Background task: sync HA device states every 30 seconds."""
+    while True:
+        await asyncio.sleep(30)
+        try:
+            db = get_db()
+            config = db.execute("SELECT url, api_key FROM ha_config WHERE id = 1").fetchone()
+            db.close()
+            if not config or not config["url"] or not config["api_key"]:
+                continue
+
+            base_url = config["url"].rstrip('/')
+            api_key = config["api_key"]
+            all_states = await _ha_fetch_all_states(base_url, api_key)
+            if not all_states:
+                continue
+
+            db = get_db()
+            devices = db.execute("SELECT id, entity_id FROM ha_devices").fetchall()
+            changed = False
+            for dev in devices:
+                state = all_states.get(dev["entity_id"])
+                if state is not None:
+                    is_on = 1 if state in ('on', 'home', 'locked', 'open') else 0
+                    db.execute(
+                        "UPDATE ha_devices SET is_on = ?, status = ? WHERE id = ?",
+                        (is_on, state, dev["id"]),
+                    )
+                    changed = True
+
+            if changed:
+                db.execute(
+                    "UPDATE ha_config SET last_synced = datetime('now') WHERE id = 1",
+                )
+                db.commit()
+                await broadcast_sse('ha-devices')
+            else:
+                db.commit()
+        except Exception as e:
+            print(f"Periodic HA sync error: {e}")
+        finally:
+            try:
+                db.close()
+            except NameError:
+                pass
 
 # ---------------------------------------------------------------------------
 # Health check
@@ -159,7 +212,10 @@ async def sse_endpoint():
                 event_type = await queue.get()
                 yield f"event: update\ndata: {event_type}\n\n"
         finally:
-            sse_subscribers.discard(queue)
+            try:
+                sse_subscribers.remove(queue)
+            except ValueError:
+                pass
 
     from fastapi.responses import StreamingResponse
     return StreamingResponse(
@@ -427,12 +483,15 @@ async def update_movie(data: MovieData):
         current = db.execute("SELECT poster_url FROM movie WHERE id = 1").fetchone()
         current_filename = current["poster_url"] if current else None
 
-        # Download new poster locally if a remote URL is provided
+        # Resolve poster: keep local /poster/ refs, download remote URLs
         local_filename = None
         if data.poster_url:
-            local_filename = await _download_poster(data.poster_url)
+            if data.poster_url.startswith('/poster/'):
+                local_filename = data.poster_url[len('/poster/'):]
+            else:
+                local_filename = await _download_poster(data.poster_url)
 
-        # Delete old poster file if it was a local one
+        # Delete old poster file if it changed
         if current_filename and current_filename != local_filename:
             old_path = POSTERS_DIR / current_filename
             old_path.unlink(missing_ok=True)
@@ -488,7 +547,7 @@ async def search_movie(query: str = Query(..., min_length=1)):
 # Display Override
 # ---------------------------------------------------------------------------
 
-VALID_SCREENS = {'photo', 'weather', 'movie', 'memo', 'list'}
+VALID_SCREENS = {'photo', 'weather', 'movie', 'memo', 'list', 'ha'}
 
 @app.get("/api/display-override")
 async def get_display_override():
@@ -516,5 +575,323 @@ async def set_display_override(data: DisplayOverride):
         db.commit()
         asyncio.create_task(broadcast_sse('display-override'))
         return {"screen": data.screen}
+    finally:
+        db.close()
+
+# ---------------------------------------------------------------------------
+# Home Assistant — Config
+# ---------------------------------------------------------------------------
+
+class HaConfigData(BaseModel):
+    url: str
+    api_key: str
+
+class HaDeviceCreate(BaseModel):
+    entity_id: str
+    name: str
+    device_type: str = 'switch'
+    icon: str = 'switch'
+    is_active: bool = False
+    sort_order: Optional[int] = None
+
+class HaDeviceUpdate(BaseModel):
+    name: Optional[str] = None
+    device_type: Optional[str] = None
+    icon: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+@app.get("/api/ha/config")
+async def get_ha_config():
+    db = get_db()
+    try:
+        row = db.execute("SELECT * FROM ha_config WHERE id = 1").fetchone()
+        if not row:
+            return {"url": "", "api_key": "", "last_synced": None}
+        result = dict(row)
+        # Mask the API key — show only last 4 chars
+        key = result.get("api_key", "")
+        result["api_key"] = f'****{key[-4:]}' if len(key) > 4 else ""
+        return result
+    finally:
+        db.close()
+
+@app.put("/api/ha/config")
+async def update_ha_config(data: HaConfigData):
+    db = get_db()
+    try:
+        db.execute(
+            "UPDATE ha_config SET url = ?, api_key = ? WHERE id = 1",
+            (data.url, data.api_key),
+        )
+        db.commit()
+        return {"status": "saved"}
+    finally:
+        db.close()
+
+# ---------------------------------------------------------------------------
+# Home Assistant — Devices
+# ---------------------------------------------------------------------------
+
+@app.get("/api/ha/devices")
+async def list_ha_devices():
+    db = get_db()
+    try:
+        rows = db.execute("SELECT * FROM ha_devices ORDER BY sort_order ASC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+@app.post("/api/ha/devices", status_code=201)
+async def create_ha_device(data: HaDeviceCreate):
+    db = get_db()
+    try:
+        cursor = db.execute(
+            "INSERT INTO ha_devices (entity_id, name, device_type, icon, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+            (data.entity_id, data.name, data.device_type, data.icon, 1 if data.is_active else 0, data.sort_order or 0),
+        )
+        db.commit()
+        asyncio.create_task(broadcast_sse('ha-devices'))
+        row = db.execute("SELECT * FROM ha_devices WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return dict(row)
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="Entity ID already exists")
+    finally:
+        db.close()
+
+@app.put("/api/ha/devices/{device_id}")
+async def update_ha_device(device_id: int, data: HaDeviceUpdate):
+    db = get_db()
+    try:
+        updates, params = [], []
+        if data.name is not None:
+            updates.append("name = ?"); params.append(data.name)
+        if data.device_type is not None:
+            updates.append("device_type = ?"); params.append(data.device_type)
+        if data.icon is not None:
+            updates.append("icon = ?"); params.append(data.icon)
+        if data.is_active is not None:
+            updates.append("is_active = ?"); params.append(1 if data.is_active else 0)
+        if data.sort_order is not None:
+            updates.append("sort_order = ?"); params.append(data.sort_order)
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        params.append(device_id)
+        db.execute(f"UPDATE ha_devices SET {', '.join(updates)} WHERE id = ?", params)
+        db.commit()
+        asyncio.create_task(broadcast_sse('ha-devices'))
+        row = db.execute("SELECT * FROM ha_devices WHERE id = ?", (device_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Device not found")
+        return dict(row)
+    finally:
+        db.close()
+
+@app.delete("/api/ha/devices/{device_id}")
+async def delete_ha_device(device_id: int):
+    db = get_db()
+    try:
+        db.execute("DELETE FROM ha_devices WHERE id = ?", (device_id,))
+        db.commit()
+        asyncio.create_task(broadcast_sse('ha-devices'))
+        return {"deleted": device_id}
+    finally:
+        db.close()
+
+@app.put("/api/ha/devices/reorder")
+async def reorder_ha_devices(data: ReorderRequest):
+    db = get_db()
+    try:
+        for index, device_id in enumerate(data.order):
+            db.execute("UPDATE ha_devices SET sort_order = ? WHERE id = ?", (index, device_id))
+        db.commit()
+        asyncio.create_task(broadcast_sse('ha-devices'))
+        rows = db.execute("SELECT * FROM ha_devices ORDER BY sort_order ASC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+# ---------------------------------------------------------------------------
+# Home Assistant — Sync & Control
+# ---------------------------------------------------------------------------
+
+async def _ha_get_state(entity_id: str, base_url: str, api_key: str) -> Optional[str]:
+    """Fetch the current state of a single entity from HA."""
+    try:
+        async with AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{base_url}/api/states/{entity_id}",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        if resp.status_code == 200:
+            return resp.json().get("state")
+    except Exception as e:
+        print(f"HA state fetch failed for {entity_id}: {e}")
+    return None
+
+async def _ha_call_service(service_domain: str, service_name: str, entity_id: str, base_url: str, api_key: str, **kwargs):
+    """Call an HA service (e.g., light.turn_on)."""
+    payload = {"entity_id": entity_id}
+    payload.update(kwargs)
+    try:
+        async with AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{base_url}/api/services/{service_domain}/{service_name}",
+                json=payload,
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"HA service call failed ({service_domain}.{service_name} on {entity_id}): {e}")
+        return False
+
+async def _ha_fetch_all_states(base_url: str, api_key: str) -> dict:
+    """Fetch all states from HA. Returns {entity_id: state}."""
+    try:
+        async with AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"{base_url}/api/states",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        if resp.status_code == 200:
+            states = {}
+            for item in resp.json():
+                states[item["entity_id"]] = item["state"]
+            return states
+    except Exception as e:
+        print(f"HA bulk state fetch failed: {e}")
+    return {}
+
+@app.post("/api/ha/sync")
+async def sync_ha_devices():
+    """Sync all registered devices with their actual HA state."""
+    db = get_db()
+    try:
+        config = db.execute("SELECT url, api_key FROM ha_config WHERE id = 1").fetchone()
+        if not config or not config["url"] or not config["api_key"]:
+            raise HTTPException(status_code=400, detail="HA connection not configured")
+
+        base_url = config["url"].rstrip('/')
+        api_key = config["api_key"]
+
+        # Fetch all states at once
+        all_states = await _ha_fetch_all_states(base_url, api_key)
+        if not all_states:
+            raise HTTPException(status_code=502, detail="Failed to reach Home Assistant")
+
+        # Update local states
+        devices = db.execute("SELECT id, entity_id FROM ha_devices").fetchall()
+        for dev in devices:
+            state = all_states.get(dev["entity_id"])
+            if state is not None:
+                is_on = 1 if state in ('on', 'home', 'locked', 'open') else 0
+                db.execute(
+                    "UPDATE ha_devices SET is_on = ?, status = ? WHERE id = ?",
+                    (is_on, state, dev["id"]),
+                )
+
+        db.execute(
+            "UPDATE ha_config SET last_synced = datetime('now') WHERE id = 1",
+        )
+        db.commit()
+        asyncio.create_task(broadcast_sse('ha-devices'))
+
+        rows = db.execute("SELECT * FROM ha_devices ORDER BY sort_order ASC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+@app.put("/api/ha/devices/{device_id}/toggle")
+async def toggle_ha_device(device_id: int):
+    """Toggle a device's state via HA API and update local state."""
+    db = get_db()
+    try:
+        dev = db.execute("SELECT * FROM ha_devices WHERE id = ?", (device_id,)).fetchone()
+        if not dev:
+            raise HTTPException(status_code=404, detail="Device not found")
+        dev = dict(dev)
+
+        config = db.execute("SELECT url, api_key FROM ha_config WHERE id = 1").fetchone()
+        if not config or not config["url"] or not config["api_key"]:
+            raise HTTPException(status_code=400, detail="HA connection not configured")
+
+        base_url = config["url"].rstrip('/')
+        api_key = config["api_key"]
+        entity_id = dev["entity_id"]
+        current_state = bool(dev["is_on"])
+
+        # Determine the service call based on device type
+        success = False
+        if dev["device_type"] == "switch":
+            action = "off" if current_state else "on"
+            success = await _ha_call_service("switch", action, entity_id, base_url, api_key)
+        elif dev["device_type"] == "light":
+            action = "off" if current_state else "on"
+            success = await _ha_call_service("light", action, entity_id, base_url, api_key)
+        elif dev["device_type"] == "fan":
+            action = "off" if current_state else "on"
+            success = await _ha_call_service("fan", action, entity_id, base_url, api_key)
+        elif dev["device_type"] == "lock":
+            action = "unlock" if current_state else "lock"
+            success = await _ha_call_service("lock", action, entity_id, base_url, api_key)
+        elif dev["device_type"] == "climate":
+            # For climate, we just flip — but this doesn't make much sense.
+            # We'll skip toggling climate entities for now.
+            raise HTTPException(status_code=400, detail="Cannot toggle climate device directly")
+        else:
+            # Default: try switch domain
+            action = "off" if current_state else "on"
+            success = await _ha_call_service("switch", action, entity_id, base_url, api_key)
+
+        if not success:
+            raise HTTPException(status_code=502, detail="Failed to control device via Home Assistant")
+
+        # Optimistically update local state
+        new_is_on = 0 if current_state else 1
+        new_status = "on" if new_is_on else "off"
+        db.execute(
+            "UPDATE ha_devices SET is_on = ?, status = ? WHERE id = ?",
+            (new_is_on, new_status, device_id),
+        )
+        db.commit()
+        asyncio.create_task(broadcast_sse('ha-devices'))
+
+        row = db.execute("SELECT * FROM ha_devices WHERE id = ?", (device_id,)).fetchone()
+        return dict(row)
+    finally:
+        db.close()
+
+@app.get("/api/ha/entities")
+async def list_ha_entities():
+    """List all available HA entities (for discovery)."""
+    db = get_db()
+    try:
+        config = db.execute("SELECT url, api_key FROM ha_config WHERE id = 1").fetchone()
+        if not config or not config["url"] or not config["api_key"]:
+            raise HTTPException(status_code=400, detail="HA connection not configured")
+
+        base_url = config["url"].rstrip('/')
+        api_key = config["api_key"]
+
+        all_states = await _ha_fetch_all_states(base_url, api_key)
+        if not all_states:
+            raise HTTPException(status_code=502, detail="Failed to reach Home Assistant")
+
+        # Get registered entity IDs to mark them
+        registered = set()
+        rows = db.execute("SELECT entity_id FROM ha_devices").fetchall()
+        for r in rows:
+            registered.add(r["entity_id"])
+
+        result = []
+        for entity_id, state in sorted(all_states.items()):
+            domain = entity_id.split('.')[0]
+            result.append({
+                "entity_id": entity_id,
+                "state": state,
+                "domain": domain,
+                "registered": entity_id in registered,
+            })
+        return result
     finally:
         db.close()

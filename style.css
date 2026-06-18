@@ -679,6 +679,13 @@ body {
   height: 100%;
 }
 
+.weather-interrupt__icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
 .weather-interrupt__temp-group {
   display: flex;
   align-items: flex-start;
@@ -804,4 +811,114 @@ body {
 .icon--filled {
   fill: currentColor;
   stroke: none;
+}
+
+/* ============================================
+   HOME ASSISTANT SCREEN
+   Grid of device tiles
+   ============================================ */
+.ha-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px;
+  gap: var(--spacing-xl);
+}
+
+.ha-screen__title {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: -0.5px;
+  margin: 0;
+}
+
+.ha-screen__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-lg);
+  max-width: 900px;
+  width: 100%;
+}
+
+.ha-device-tile {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  border-radius: var(--radius-lg);
+  background: var(--surface-tile);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.ha-device-tile:hover {
+  background: var(--surface-dock-hover);
+}
+
+.ha-device-tile:active {
+  transform: scale(0.97);
+  opacity: 0.8;
+}
+
+.ha-device-tile * {
+  pointer-events: none;
+}
+
+.ha-device-tile__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--icon-bg-off);
+  color: var(--icon-color-off);
+  transition: all 0.2s ease;
+}
+
+.ha-device-tile__icon .icon {
+  width: 28px;
+  height: 28px;
+}
+
+.ha-device-tile__icon--on {
+  background: var(--icon-bg-on);
+  color: var(--icon-color-on);
+}
+
+.ha-device-tile__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ha-device-tile__name {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ha-device-tile__status {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.ha-device-tile__state {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }

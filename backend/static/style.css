@@ -830,3 +830,228 @@ body {
   font-weight: 500;
   color: var(--text-primary);
 }
+
+/* ============================================
+   HOME ASSISTANT
+   ============================================ */
+
+.ha-config-card,
+.ha-add-device,
+.ha-discover {
+  background: var(--surface-widget);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.ha-config-card__title,
+.ha-add-device__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-md);
+}
+
+.ha-config-card .input + .input {
+  margin-top: var(--space-sm);
+}
+
+.ha-config-card__actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.ha-config-card__status {
+  margin-top: var(--space-sm);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.ha-add-device .input + .input,
+.ha-add-device .input + select {
+  margin-top: var(--space-sm);
+}
+
+.ha-add-device button {
+  margin-top: var(--space-sm);
+  width: 100%;
+  justify-content: center;
+}
+
+.ha-device-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+/* Discover section */
+.ha-discover button {
+  width: 100%;
+  justify-content: center;
+}
+
+.ha-discover-results {
+  margin-top: var(--space-md);
+  max-height: 300px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ha-discover-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-xs);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.8125rem;
+}
+
+.ha-discover-item:last-child {
+  border-bottom: none;
+}
+
+.ha-discover-item__id {
+  flex: 1;
+  min-width: 0;
+  font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ha-discover-item__domain {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.ha-discover-item__state {
+  font-size: 0.6875rem;
+  flex-shrink: 0;
+}
+
+.ha-discover-item__state--registered {
+  color: var(--color-success);
+}
+
+.ha-discover-item__state--available {
+  color: var(--text-secondary);
+}
+
+.ha-discover-add-btn {
+  padding: 2px 8px;
+  font-size: 0.6875rem;
+  flex-shrink: 0;
+}
+
+.ha-discover-empty {
+  padding: var(--space-md);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+/* Device cards */
+.ha-devices-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.ha-device-card {
+  background: var(--surface-widget);
+  border-radius: var(--radius-md);
+  padding: var(--space-md) var(--space-lg);
+}
+
+.ha-device-card__header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.ha-device-card__name {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ha-device-card__entity {
+  font-size: 0.75rem;
+  font-family: 'SF Mono', SFMono-Regular, Consolas, monospace;
+  color: var(--text-muted);
+}
+
+.ha-device-card__body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.ha-device-card__type {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
+
+.ha-device-card__status {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.ha-device-card__status--on {
+  background: rgba(48, 209, 88, 0.15);
+  color: var(--color-success);
+}
+
+.ha-device-card__status--off {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+}
+
+.ha-device-card__badge {
+  font-size: 0.6875rem;
+  color: var(--color-accent);
+  background: rgba(90, 200, 250, 0.1);
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+}
+
+.ha-device-card__actions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.ha-device-card__action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ha-device-card__action-btn:active {
+  background: var(--surface-hover);
+}
+
+.ha-device-card__action-btn--delete {
+  color: var(--color-error);
+}

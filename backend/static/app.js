@@ -1,7 +1,7 @@
 /**
  * Skylight Home Admin - Frontend
  * Mobile PWA for managing dashboard content:
- * Gallery (photos), Memo, List, Movie Night
+ * Gallery (photos), Memo, List, Movie Night, Home Assistant
  */
 
 'use strict';
@@ -18,11 +18,14 @@ let state = {
   listItems: [],
   movie: null,
   displayOverride: null,
+  haConfig: null,
+  haDevices: [],
 };
 
 let dragState = { dragging: false, sourceId: null };
 let editingListItemId = null;
 let deletingPhotoId = null;
+let deletingHaDeviceId = null;
 let validatedMovieData = null; // Set when a TMDB result is selected
 let forceSaveMovie = false;    // Set after warning shown, user presses Save again
 
@@ -38,12 +41,16 @@ async function init() {
     fetchListItems(),
     fetchMovie(),
     fetchDisplayOverride(),
+    fetchHaConfig(),
+    fetchHaDevices(),
   ]);
   renderGallery();
   renderMemo();
   renderList();
   renderMovie();
   renderDisplayOverride();
+  renderHaConfig();
+  renderHaDevices();
   registerServiceWorker();
 }
 
@@ -98,6 +105,11 @@ function setupModals() {
   document.querySelector('#modal-photo-delete .modal-backdrop')?.addEventListener('click', () => hideModal('modal-photo-delete'));
   document.querySelector('#modal-photo-delete .modal-cancel')?.addEventListener('click', () => hideModal('modal-photo-delete'));
   document.querySelector('#modal-photo-delete .modal-confirm-delete')?.addEventListener('click', confirmDeletePhoto);
+
+  // HA device delete modal
+  document.querySelector('#modal-ha-delete .modal-backdrop')?.addEventListener('click', () => hideModal('modal-ha-delete'));
+  document.querySelector('#modal-ha-delete .modal-cancel')?.addEventListener('click', () => hideModal('modal-ha-delete'));
+  document.querySelector('#modal-ha-delete .modal-confirm-ha-delete')?.addEventListener('click', confirmDeleteHaDevice);
 
   // List edit modal
   document.querySelector('#modal-list-edit .modal-backdrop')?.addEventListener('click', () => hideModal('modal-list-edit'));
@@ -227,6 +239,8 @@ function setupGalleryInteractions() {
  * Uses a long-press to initiate drag, then follows finger movement.
  */
 function setupTouchDrag(container) {
+  if (container._touchDragBound) return;
+  container._touchDragBound = true;
   let touchDragItem = null;
   let touchDragClone = null;
   let touchStartX, touchStartY;
@@ -794,7 +808,7 @@ document.getElementById('movie-save-btn')?.addEventListener('click', async () =>
   // If we have a previously validated selection, merge user edits on top
   if (validatedMovieData && !forceSaveMovie) {
     await saveMovieToDb({
-      title: validatedMovieData.title,
+      title,
       year: year ?? validatedMovieData.year,
       poster_url: posterUrl ?? validatedMovieData.poster_url,
       rating: rating ?? validatedMovieData.rating,
@@ -934,7 +948,7 @@ function updateDisplayCurrentText(override) {
   const el = document.getElementById('display-current-text');
   if (!el) return;
   if (override) {
-    const labels = { photo: 'Photos', weather: 'Weather', memo: 'Memo', list: 'List', movie: 'Movie Night' };
+    const labels = { photo: 'Photos', weather: 'Weather', memo: 'Memo', list: 'List', movie: 'Movie Night', ha: 'Home Assistant' };
     el.textContent = `Overridden — showing ${labels[override] || override}`;
   } else {
     el.textContent = 'Following schedule';
@@ -942,8 +956,288 @@ function updateDisplayCurrentText(override) {
 }
 
 // ============================================
-// BOOT
+// HOME ASSISTANT
 // ============================================
+
+async function fetchHaConfig() {
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/config`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.haConfig = await res.json();
+  } catch (e) { console.error('Fetch HA config error:', e); }
+}
+
+async function fetchHaDevices() {
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/devices`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.haDevices = await res.json();
+  } catch (e) { console.error('Fetch HA devices error:', e); }
+}
+
+function renderHaConfig() {
+  if (!state.haConfig) return;
+
+  const urlInput = document.getElementById('ha-url');
+  const keyInput = document.getElementById('ha-api-key');
+  const statusEl = document.getElementById('ha-last-synced');
+
+  urlInput.value = state.haConfig.url || '';
+  keyInput.value = ''; // Don't populate masked key
+
+  if (state.haConfig.last_synced) {
+    statusEl.textContent = `Last synced: ${state.haConfig.last_synced}`;
+  } else {
+    statusEl.textContent = 'Not yet synced';
+  }
+}
+
+function renderHaDevices() {
+  const container = document.getElementById('ha-devices-list');
+  const empty = document.getElementById('ha-empty');
+
+  if (!state.haDevices.length) {
+    container.innerHTML = '';
+    empty.style.display = 'flex';
+    return;
+  }
+
+  empty.style.display = 'none';
+
+  const typeLabels = { switch: 'Switch', light: 'Light', fan: 'Fan', lock: 'Lock', climate: 'Climate' };
+
+  container.innerHTML = state.haDevices.map(device => `
+    <div class="ha-device-card" data-id="${device.id}">
+      <div class="ha-device-card__header">
+        <span class="ha-device-card__name">${escapeHtml(device.name)}</span>
+        <span class="ha-device-card__entity">${escapeHtml(device.entity_id)}</span>
+      </div>
+      <div class="ha-device-card__body">
+        <span class="ha-device-card__type">${typeLabels[device.device_type] || device.device_type}</span>
+        <span class="ha-device-card__status ha-device-card__status--${device.is_on ? 'on' : 'off'}">
+          ${device.status || (device.is_on ? 'On' : 'Off')}
+        </span>
+        ${device.is_active ? '<span class="ha-device-card__badge">Dock</span>' : ''}
+      </div>
+      <div class="ha-device-card__actions">
+        <button class="ha-device-card__action-btn" data-toggle-id="${device.id}" aria-label="Toggle ${device.name}">
+          <svg class="icon icon--sm" viewBox="0 0 24 24"><path d="M18.36 5.64l-1.41-1.41A4 4 0 0014 4H4a2 2 0 00-2 2v12a2 2 0 002 2h10a4 4 0 002.94-1.29l1.41-1.41M7 14l2-2 2 2M11 18V10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="ha-device-card__action-btn ha-device-card__action-btn--delete" data-delete-ha-id="${device.id}" aria-label="Delete ${device.name}">
+          <svg class="icon icon--sm"><use href="#icon-trash"/></svg>
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  setupHaDeviceInteractions();
+}
+
+function setupHaDeviceInteractions() {
+  // Toggle buttons
+  document.querySelectorAll('[data-toggle-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.toggleId);
+      try {
+        const res = await fetch(`${API_BASE}/api/ha/devices/${id}/toggle`, { method: 'PUT' });
+        if (!res.ok) throw new Error('Toggle failed');
+        await fetchHaDevices();
+        renderHaDevices();
+        showToast('Device toggled');
+      } catch (err) {
+        console.error('Toggle error:', err);
+        showToast('Toggle failed');
+      }
+    });
+  });
+
+  // Delete buttons
+  document.querySelectorAll('[data-delete-ha-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      deletingHaDeviceId = parseInt(btn.dataset.deleteHaId);
+      const device = state.haDevices.find(d => d.id === deletingHaDeviceId);
+      const nameEl = document.getElementById('ha-delete-device-name');
+      if (device && nameEl) nameEl.textContent = `"${device.name}" will be removed.`;
+      showModal('modal-ha-delete');
+    });
+  });
+}
+
+// Save HA config
+async function saveHaConfig() {
+  const url = document.getElementById('ha-url').value.trim();
+  const apiKey = document.getElementById('ha-api-key').value.trim();
+
+  if (!url) {
+    showToast('URL is required');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, api_key: apiKey }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await fetchHaConfig();
+    renderHaConfig();
+    showToast('Connection saved');
+  } catch (err) {
+    console.error('Save HA config error:', err);
+    showToast('Save failed');
+  }
+}
+
+// Sync HA devices
+async function syncHaDevices() {
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/sync`, { method: 'POST' });
+    if (!res.ok) throw new Error(await res.text());
+    state.haDevices = await res.json();
+    await fetchHaConfig();
+    renderHaDevices();
+    renderHaConfig();
+    showToast(`Synced ${state.haDevices.length} devices`);
+  } catch (err) {
+    console.error('Sync error:', err);
+    showToast('Sync failed — check connection settings');
+  }
+}
+
+// Add HA device
+async function addHaDevice() {
+  const entityId = document.getElementById('ha-entity-id').value.trim();
+  const name = document.getElementById('ha-device-name').value.trim();
+  const deviceType = document.getElementById('ha-device-type').value;
+
+  if (!entityId || !name) {
+    showToast('Entity ID and name are required');
+    return;
+  }
+
+  // Determine icon based on type
+  const iconMap = { switch: 'switch', light: 'light', fan: 'fan', lock: 'lock', climate: 'climate' };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/devices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entity_id: entityId,
+        name,
+        device_type: deviceType,
+        icon: iconMap[deviceType] || 'switch',
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await fetchHaDevices();
+    renderHaDevices();
+    showToast(`Added "${name}"`);
+
+    // Clear inputs
+    document.getElementById('ha-entity-id').value = '';
+    document.getElementById('ha-device-name').value = '';
+  } catch (err) {
+    console.error('Add device error:', err);
+    showToast(err.message.includes('already exists') ? 'Entity already added' : 'Failed to add device');
+  }
+}
+
+// Discover entities from HA
+async function discoverHaEntities() {
+  const resultsContainer = document.getElementById('ha-discover-results');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/entities`);
+    if (!res.ok) throw new Error(await res.text());
+
+    const entities = await res.json();
+
+    if (!entities.length) {
+      resultsContainer.innerHTML = '<div class="ha-discover-empty">No entities found</div>';
+      resultsContainer.style.display = 'block';
+      return;
+    }
+
+    // Filter to useful domains only
+    const usefulDomains = ['light', 'switch', 'fan', 'lock', 'climate'];
+    const filtered = entities.filter(e => usefulDomains.includes(e.domain));
+
+    resultsContainer.innerHTML = filtered.map(entity => `
+      <div class="ha-discover-item" data-entity-id="${escapeHtml(entity.entity_id)}">
+        <span class="ha-discover-item__id">${escapeHtml(entity.entity_id)}</span>
+        <span class="ha-discover-item__domain">${entity.domain}</span>
+        <span class="ha-discover-item__state ha-discover-item__state--${entity.registered ? 'registered' : 'available'}">
+          ${entity.registered ? '✓ Added' : entity.state}
+        </span>
+        ${!entity.registered ? `<button class="btn btn--add ha-discover-add-btn" data-entity-id="${escapeHtml(entity.entity_id)}">Add</button>` : ''}
+      </div>
+    `).join('');
+
+    resultsContainer.style.display = 'block';
+
+    // Wire up add buttons
+    resultsContainer.querySelectorAll('.ha-discover-add-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const entityId = btn.dataset.entityId;
+        const domain = entityId.split('.')[0];
+        const friendlyName = entityId.split('.')[1].replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+        try {
+          const res = await fetch(`${API_BASE}/api/ha/devices`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              entity_id: entityId,
+              name: friendlyName,
+              device_type: domain,
+              icon: domain === 'climate' ? 'climate' : domain,
+            }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          await fetchHaDevices();
+          renderHaDevices();
+          showToast(`Added "${friendlyName}"`);
+          // Refresh discovery list
+          await discoverHaEntities();
+        } catch (err) {
+          console.error('Discover add error:', err);
+          showToast('Failed to add device');
+        }
+      });
+    });
+
+  } catch (err) {
+    console.error('Discover error:', err);
+    showToast(err.message.includes('configured') ? 'Configure connection first' : 'Discovery failed');
+  }
+}
+
+async function confirmDeleteHaDevice() {
+  hideModal('modal-ha-delete');
+  if (deletingHaDeviceId == null) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/devices/${deletingHaDeviceId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Delete failed');
+
+    state.haDevices = state.haDevices.filter(d => d.id !== deletingHaDeviceId);
+    renderHaDevices();
+    showToast('Device removed');
+  } catch (err) {
+    console.error('Delete error:', err);
+    showToast('Delete failed');
+  } finally {
+    deletingHaDeviceId = null;
+  }
+}
+
+// HA event listeners
+document.getElementById('ha-save-config-btn')?.addEventListener('click', saveHaConfig);
+document.getElementById('ha-sync-btn')?.addEventListener('click', syncHaDevices);
+document.getElementById('ha-add-device-btn')?.addEventListener('click', addHaDevice);
+document.getElementById('ha-discover-btn')?.addEventListener('click', discoverHaEntities);
 
 setupModals();
 document.addEventListener('DOMContentLoaded', init);

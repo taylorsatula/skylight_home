@@ -4,21 +4,16 @@
 // ============================================
 
 // --- Config ---
-const CONFIG = {
-  dockDevices: [
-    { id: 'railing', entity_id: 'switch.smart_wi_fi_plug', name: 'Railing', type: 'switch', icon: 'switch', isActive: true },
-    { id: 'bedroom_light', entity_id: 'light.smart_multicolor_bulb', name: 'Bedroom Light', type: 'light', icon: 'light' },
-    { id: 'christmas_tree', entity_id: 'switch.smart_wi_fi_plug_2', name: 'Christmas Tree', type: 'switch', icon: 'switch' },
-  ],
-};
+// No static config needed — dock devices come from HA backend.
 
-// --- Live data (fetched from /admin backend) ---
+// --- Live data (fetched from backend) ---
 let photoUrls = [];
 let movieData = null;
 let memoData = null;
 let listItems = [];
 let weatherData = null;
 let displayOverride = null;  // Manual override from admin; cleared on schedule change
+let haDevices = [];           // Home Assistant devices (dock + HA screen)
 
 // --- Schedule ---
 // Rules evaluated top-to-bottom; first match wins. Default: photo.
@@ -82,6 +77,10 @@ function renderScreen(type) {
       if (listItems.length) showList(listItems.map(i => i.text));
       else showPhoto();
       break;
+    case 'ha':
+      if (haDevices.length) showHA();
+      else showPhoto();
+      break;
     case 'trash':
       showTrashNight();
       break;
@@ -96,12 +95,13 @@ function showScheduledScreen() {
 
 async function fetchDashboardData() {
   try {
-    const [photosRes, movieRes, memoRes, listRes, overrideRes] = await Promise.all([
-      fetch('/api/photos').then(r => r.ok ? r.json() : []),
+    const [photosRes, movieRes, memoRes, listRes, overrideRes, haRes] = await Promise.all([
+      fetch('/api/photos').then(r => r.ok ? r.json() : []).catch(() => []),
       fetch('/api/movie').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/memo').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/list-items').then(r => r.ok ? r.json() : []).catch(() => []),
       fetch('/api/display-override').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+      fetch('/api/ha/devices').then(r => r.ok ? r.json() : []).catch(() => []),
     ]);
 
     photoUrls = photosRes.map(p => `/photos/${p.filename}`);
@@ -109,6 +109,7 @@ async function fetchDashboardData() {
     memoData = memoRes;
     listItems = listRes;
     displayOverride = overrideRes.screen || null;
+    haDevices = haRes;
   } catch (err) {
     console.error('Failed to fetch dashboard data:', err);
     showError();
@@ -126,12 +127,53 @@ const WMO_CODES = {
   95: 'Thunderstorm', 96: 'Thunderstorm + Hail', 99: 'Severe Thunderstorm',
 };
 
+// WMO weather code → icon file (see /weather-icons/).
+// Night variants only for clear skies; other conditions look the same day/night.
+const WEATHER_ICONS = {
+  0:  '039-sun.png',       // Clear
+  1:  '015-day.png',       // Mainly clear
+  2:  '011-cloudy.png',    // Partly cloudy
+  3:  '034-cloudy-1.png',  // Overcast
+  45: '017-foog.png',      // Fog
+  48: '017-foog.png',      // Rime fog
+  51: '003-rainy.png',     // Light drizzle
+  53: '003-rainy.png',     // Drizzle
+  55: '004-rainy-1.png',   // Dense drizzle
+  61: '003-rainy.png',     // Light rain
+  63: '003-rainy.png',     // Rain
+  65: '016-flood.png',     // Heavy rain
+  71: '006-snowy.png',     // Light snow
+  73: '006-snowy.png',     // Snow
+  75: '012-snowy-1.png',   // Heavy snow
+  77: '031-snowflake.png', // Snow grains
+  80: '003-rainy.png',     // Showers
+  81: '003-rainy.png',     // Moderate showers
+  82: '004-rainy-1.png',   // Heavy showers
+  85: '006-snowy.png',     // Snow showers
+  86: '012-snowy-1.png',   // Heavy snow showers
+  95: '008-storm.png',     // Thunderstorm
+  96: '005-hail.png',      // Thunderstorm + hail
+  99: '013-storm-2.png',   // Severe thunderstorm
+};
+
+const WEATHER_ICONS_NIGHT = {
+  0: '032-star.png',  // Clear night
+  1: '032-star.png',  // Mainly clear night
+};
+
+function weatherIconForCode(code, isDay = true) {
+  const file = (!isDay && WEATHER_ICONS_NIGHT[code])
+    ? WEATHER_ICONS_NIGHT[code]
+    : (WEATHER_ICONS[code] || '039-sun.png');
+  return `<img class="weather-interrupt__icon-img" src="/weather-icons/${file}" alt="" />`;
+}
+
 async function fetchWeather() {
   try {
     // Owens Cross Roads, AL
     const res = await fetch(
       'https://api.open-meteo.com/v1/forecast?latitude=34.2444&longitude=-86.7589'
-      + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m'
+      + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,is_day'
       + '&daily=temperature_2m_max,temperature_2m_min'
       + '&timezone=America%2FChicago&temperature_unit=fahrenheit',
       { cache: 'no-cache' },
@@ -142,12 +184,21 @@ async function fetchWeather() {
     const c = data.current;
     const d = data.daily;
 
+    const temp = Math.round(c.temperature_2m);
+    const high = Math.round(d.temperature_2m_max[0]);
+    const low = Math.round(d.temperature_2m_min[0]);
+    const range = high - low;
+    const nowPct = range > 0 ? Math.max(0, Math.min(100, Math.round((temp - low) / range * 100))) : 50;
+
     weatherData = {
-      temp: Math.round(c.temperature_2m),
+      temp,
       feelsLike: Math.round(c.apparent_temperature),
       condition: WMO_CODES[c.weather_code] || 'Unknown',
-      high: Math.round(d.temperature_2m_max[0]),
-      low: Math.round(d.temperature_2m_min[0]),
+      icon: weatherIconForCode(c.weather_code, c.is_day === 1),
+      high,
+      low,
+      unit: '°F',
+      nowPct,
       humidity: c.relative_humidity_2m,
       windSpeed: Math.round(c.wind_speed_10m * 0.621371), // km/h → mph
     };
@@ -158,7 +209,13 @@ async function fetchWeather() {
 
 // --- Trash Night Interrupt ---
 function showTrashNight() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (trashDismissedDate === today) {
+    renderScreen('photo');
+    return;
+  }
   showInterrupt({
+    type: 'trash',
     title: 'Trash Night',
     message: 'Don\'t forget to take out the trash tonight.',
     meta: 'Dismiss when done',
@@ -187,6 +244,7 @@ function showError() {
 let currentInterrupt = null;
 let photoTimer = null;
 let photoCountdownInterval = null;
+let trashDismissedDate = null; // Tracks whether trash was dismissed today
 const PHOTO_INTERVAL = 120000; // 120 seconds
 
 // --- Clock ---
@@ -223,27 +281,47 @@ function renderDock() {
   const dock = document.getElementById('dock');
   dock.querySelectorAll('.tile').forEach(t => t.remove());
 
-  CONFIG.dockDevices.forEach(device => {
+  haDevices.forEach(device => {
     const tile = document.createElement('div');
-    tile.className = `tile${device.isActive ? ' tile--active' : ''}${device.isOn ? ' tile--on' : ''}`;
-    tile.dataset.deviceId = device.id;
+    const isOn = !!device.is_on;
+    const isActive = !!device.is_active;
+    tile.className = `tile${isActive ? ' tile--active' : ''}${isOn ? ' tile--on' : ''}`;
+    tile.dataset.haDeviceId = device.id;
+    tile.setAttribute('role', 'button');
+    tile.setAttribute('aria-label', `${device.name}: ${isOn ? 'on' : 'off'}. Tap to toggle.`);
     tile.innerHTML = `
       <div class="tile__icon">${ICONS[device.icon] || ICONS.switch}</div>
       <div class="tile__content">
         <span class="tile__name">${device.name}</span>
-        <span class="tile__status">${device.status || ''}</span>
+        <span class="tile__status">${device.status || (isOn ? 'On' : 'Off')}</span>
       </div>
     `;
-    tile.addEventListener('click', () => toggleDevice(device.id));
+    // Click handler — toggle the device via HA API
+    tile.addEventListener('click', () => toggleHaDevice(device.id));
     dock.appendChild(tile);
   });
 }
 
+async function toggleHaDevice(deviceId) {
+  try {
+    const res = await fetch(`/api/ha/devices/${deviceId}/toggle`, { method: 'PUT' });
+    if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
+    const updated = await res.json();
+    // Update local state immediately
+    const idx = haDevices.findIndex(d => d.id === deviceId);
+    if (idx !== -1) haDevices[idx] = updated;
+    renderDock();
+    // Re-render HA screen if currently showing it
+    if (currentInterrupt?.type === 'ha') showHA();
+  } catch (err) {
+    console.error('Toggle HA device error:', err);
+  }
+}
 
 
 // --- Interrupt System ---
-function showInterrupt({ title, message, meta, icon, priority = 'info' }) {
-  currentInterrupt = { title, message, meta, icon, priority };
+function showInterrupt({ type = 'interrupt', title, message, meta, icon, priority = 'info' }) {
+  currentInterrupt = { type, title, message, meta, icon, priority };
 
   const el = document.getElementById('interrupt');
   const content = document.getElementById('interrupt-content');
@@ -257,6 +335,7 @@ function showInterrupt({ title, message, meta, icon, priority = 'info' }) {
   `;
 
   el.classList.add('interrupt--active');
+  el.classList.remove('interrupt--no-dismiss');
 
   // Show attention border based on priority
   border.className = 'attention-border attention-border--active attention-border--' + priority;
@@ -301,6 +380,7 @@ function showWeather({ temp, unit, condition, high, low, feelsLike, icon, nowPct
 }
 
 function dismissInterrupt() {
+  const wasTrash = currentInterrupt?.type === 'trash';
   currentInterrupt = null;
 
   const el = document.getElementById('interrupt');
@@ -308,13 +388,16 @@ function dismissInterrupt() {
   const content = document.getElementById('interrupt-content');
   const dock = document.getElementById('dock');
 
-  el.classList.remove('interrupt--active');
+  el.classList.remove('interrupt--active', 'interrupt--no-dismiss');
   border.className = 'attention-border';
   content.innerHTML = '';
   dock.classList.remove('dock--photo-mode');
 
   if (photoTimer) clearTimeout(photoTimer);
   if (photoCountdownInterval) clearInterval(photoCountdownInterval);
+  document.getElementById('countdown-bar').style.display = 'none';
+
+  if (wasTrash) trashDismissedDate = new Date().toISOString().slice(0, 10);
 }
 
 // --- Photo Frame Interrupt ---
@@ -417,6 +500,7 @@ function navigatePhotoWithSlide(direction, countdownBar, countdownFill) {
 }
 
 function showPhoto() {
+  if (!photoUrls.length) return;
   const el = document.querySelector('.interrupt');
   const content = document.getElementById('interrupt-content');
   const countdownBar = document.getElementById('countdown-bar');
@@ -565,6 +649,45 @@ function showMovie(movieIndex = 0) {
   currentInterrupt = { type: 'movie' };
 }
 
+// --- Home Assistant Screen ---
+function showHA() {
+  const el = document.querySelector('.interrupt');
+  const content = document.getElementById('interrupt-content');
+
+  const gridHTML = haDevices.map(device => {
+    const isOn = !!device.is_on;
+    const iconSVG = ICONS[device.icon] || ICONS.switch;
+    return `
+      <div class="ha-device-tile" data-ha-device-id="${device.id}" role="button" aria-label="${device.name}: ${isOn ? 'on' : 'off'}">
+        <div class="ha-device-tile__icon${isOn ? ' ha-device-tile__icon--on' : ''}">${iconSVG}</div>
+        <div class="ha-device-tile__info">
+          <span class="ha-device-tile__name">${device.name}</span>
+          <span class="ha-device-tile__status">${device.status || (isOn ? 'On' : 'Off')}</span>
+        </div>
+        <div class="ha-device-tile__state">${isOn ? 'ON' : 'OFF'}</div>
+      </div>
+    `;
+  }).join('');
+
+  content.innerHTML = `
+    <div class="ha-screen">
+      <h2 class="ha-screen__title">Home</h2>
+      <div class="ha-screen__grid">${gridHTML}</div>
+    </div>
+  `;
+
+  // Wire up click handlers on tiles
+  content.querySelectorAll('.ha-device-tile').forEach(tile => {
+    tile.addEventListener('click', () => {
+      const id = parseInt(tile.dataset.haDeviceId);
+      toggleHaDevice(id);
+    });
+  });
+
+  el.classList.add('interrupt--active', 'interrupt--no-dismiss');
+  currentInterrupt = { type: 'ha' };
+}
+
 function startPhotoTimer(countdownBar, countdownFill) {
   countdownBar.style.display = 'block';
   const startTime = Date.now();
@@ -607,6 +730,7 @@ async function handleSSEUpdate(eventType) {
     movie: JSON.stringify(movieData),
     list: JSON.stringify(listItems),
     override: displayOverride,
+    ha: JSON.stringify(haDevices),
   };
 
   // Fetch fresh data for the affected type
@@ -637,6 +761,11 @@ async function handleSSEUpdate(eventType) {
         displayOverride = res.screen || null;
         break;
       }
+      case 'ha-devices': {
+        const res = await fetch('/api/ha/devices').then(r => r.ok ? r.json() : []).catch(() => []);
+        haDevices = res;
+        break;
+      }
     }
   } catch (err) {
     console.error('SSE update fetch error:', err);
@@ -650,6 +779,7 @@ async function handleSSEUpdate(eventType) {
     movie: JSON.stringify(movieData) !== prev.movie,
     list: JSON.stringify(listItems) !== prev.list,
     override: displayOverride !== prev.override,
+    ha: JSON.stringify(haDevices) !== prev.ha,
   };
 
   // If override changed, check if we need to switch screens
@@ -679,14 +809,23 @@ async function handleSSEUpdate(eventType) {
     case 'list':
       if (changed.list && listItems.length) showList(listItems.map(i => i.text));
       break;
+    case 'ha':
+      if (changed.ha && haDevices.length) showHA();
+      break;
   }
+
+  // Always re-render dock when HA devices change (dock is always visible)
+  if (changed.ha) renderDock();
 }
 
 // --- Init ---
 document.addEventListener('DOMContentLoaded', async () => {
   renderDock();
 
-  document.getElementById('interrupt-dismiss').addEventListener('click', dismissInterrupt);
+  document.getElementById('interrupt-dismiss').addEventListener('click', () => {
+    dismissInterrupt();
+    renderScreen('photo');
+  });
 
   // Photo swipe navigation
   initPhotoSwipeListeners();
@@ -727,10 +866,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     lastSlot = currentSlot;
 
     const next = getScheduledScreen();
+    const today = new Date().toISOString().slice(0, 10);
+    const effectiveNext = (next === 'trash' && trashDismissedDate === today) ? 'photo' : next;
     const current = currentInterrupt?.type;
-    if (next !== current) {
+    if (effectiveNext !== current) {
       dismissInterrupt();
-      renderScreen(next);
+      renderScreen(effectiveNext);
     }
   }, 60000);
 
@@ -741,6 +882,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const prevMovie = JSON.stringify(movieData);
     const prevList = JSON.stringify(listItems);
     const prevWeather = JSON.stringify(weatherData);
+    const prevHA = JSON.stringify(haDevices);
 
     await Promise.all([fetchDashboardData(), fetchWeather()]);
 
@@ -749,10 +891,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const movieChanged = JSON.stringify(movieData) !== prevMovie;
     const listChanged = JSON.stringify(listItems) !== prevList;
     const weatherChanged = JSON.stringify(weatherData) !== prevWeather;
+    const haChanged = JSON.stringify(haDevices) !== prevHA;
 
     // Re-render current interrupt if its data changed
     if (currentInterrupt) {
       switch (currentInterrupt.type) {
+        case 'error':
+          // Backend reachable again — drop the error screen and resume schedule
+          dismissInterrupt();
+          showScheduledScreen();
+          break;
         case 'memo':
           if (memoChanged && memoData) showMemo(memoData.title, memoData.content);
           break;
@@ -768,8 +916,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         case 'weather':
           if (weatherChanged && weatherData) showWeather(weatherData);
           break;
+        case 'ha':
+          if (haChanged && haDevices.length) showHA();
+          break;
       }
     }
+
+    // Always re-render dock when HA devices change
+    if (haChanged) renderDock();
   }, 30000);
 
 });

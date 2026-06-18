@@ -29,6 +29,7 @@
     <symbol id="icon-memo" viewBox="0 0 24 24"><path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="1.5" rx="2"/><line x1="8" y1="9" x2="16" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="13" x2="14" y2="13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="8" y1="17" x2="11" y2="17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
     <symbol id="icon-list" viewBox="0 0 24 24"><line x1="8" y1="6" x2="20" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="18" x2="20" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="4" cy="6" r="1.5" fill="currentColor"/><circle cx="4" cy="12" r="1.5" fill="currentColor"/><circle cx="4" cy="18" r="1.5" fill="currentColor"/></symbol>
     <symbol id="icon-movie" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><polygon points="10,9 10,15 16,12" fill="currentColor"/></symbol>
+    <symbol id="icon-home" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 
     <!-- Action icons -->
     <symbol id="icon-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
@@ -114,6 +115,57 @@
       </div>
     </section>
 
+    <!-- ==================== HOME ASSISTANT VIEW ==================== -->
+    <section id="view-ha" class="view">
+      <div class="view-header">
+        <h2 class="view-title">Home Assistant</h2>
+      </div>
+
+      <!-- Connection Config -->
+      <div class="ha-config-card">
+        <h3 class="ha-config-card__title">Connection</h3>
+        <input type="url" id="ha-url" class="input" placeholder="http://homeassistant.local:8123">
+        <input type="password" id="ha-api-key" class="input" placeholder="Long-lived access token">
+        <div class="ha-config-card__actions">
+          <button class="btn btn--save" id="ha-save-config-btn">Save</button>
+          <button class="btn btn--add" id="ha-sync-btn">Sync States</button>
+        </div>
+        <div id="ha-last-synced" class="ha-config-card__status"></div>
+      </div>
+
+      <!-- Add Device -->
+      <div class="ha-add-device">
+        <h3 class="ha-add-device__title">Add Device</h3>
+        <input type="text" id="ha-entity-id" class="input" placeholder="Entity ID (e.g., light.bedroom)">
+        <input type="text" id="ha-device-name" class="input" placeholder="Display name">
+        <select id="ha-device-type" class="input ha-device-select">
+          <option value="switch">Switch</option>
+          <option value="light">Light</option>
+          <option value="fan">Fan</option>
+          <option value="lock">Lock</option>
+          <option value="climate">Climate</option>
+        </select>
+        <button class="btn btn--save" id="ha-add-device-btn">Add Device</button>
+      </div>
+
+      <!-- Discover Entities -->
+      <div class="ha-discover">
+        <button class="btn btn--search" id="ha-discover-btn">Discover Entities</button>
+        <div id="ha-discover-results" class="ha-discover-results" style="display:none"></div>
+      </div>
+
+      <!-- Device List -->
+      <div id="ha-devices-list" class="ha-devices-list">
+        <!-- Devices rendered here -->
+      </div>
+
+      <div id="ha-empty" class="empty-state" style="display:none">
+        <svg class="empty-state__icon"><use href="#icon-home"/></svg>
+        <p class="empty-state__text">No devices yet</p>
+        <p class="empty-state__hint">Configure your connection and add devices above</p>
+      </div>
+    </section>
+
     <!-- ==================== MOVIE VIEW ==================== -->
     <!-- Display Override -->
     <section id="view-display" class="view">
@@ -170,6 +222,13 @@
           </div>
           <div class="display-card__label">Movie</div>
           <div class="display-card__sublabel">Movie night</div>
+        </button>
+        <button class="display-card" data-screen="ha">
+          <div class="display-card__icon">
+            <svg class="icon icon--md"><use href="#icon-home"/></svg>
+          </div>
+          <div class="display-card__label">Home</div>
+          <div class="display-card__sublabel">All devices</div>
         </button>
       </div>
 
@@ -266,6 +325,10 @@
       <svg class="icon"><use href="#icon-movie"/></svg>
       <span>Movie</span>
     </button>
+    <button class="tab" data-view="ha">
+      <svg class="icon"><use href="#icon-home"/></svg>
+      <span>HA</span>
+    </button>
     <button class="tab" data-view="display">
       <svg class="icon"><use href="#icon-display"/></svg>
       <span>Display</span>
@@ -309,6 +372,19 @@
     <div class="modal-actions">
       <button class="btn btn--cancel modal-cancel">Cancel</button>
       <button class="btn btn--save modal-confirm-add">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- HA Device Delete Confirmation Modal -->
+<div id="modal-ha-delete" class="modal" style="display:none">
+  <div class="modal-backdrop"></div>
+  <div class="modal-sheet">
+    <h3 class="modal-title">Delete Device?</h3>
+    <p class="modal-text" id="ha-delete-device-name">This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn--cancel modal-cancel">Cancel</button>
+      <button class="btn btn--danger modal-confirm-ha-delete">Delete</button>
     </div>
   </div>
 </div>

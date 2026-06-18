@@ -10,9 +10,10 @@ from datetime import datetime
 DB_DIR = os.path.join(os.path.dirname(__file__), 'data')
 DB_PATH = os.path.join(DB_DIR, 'skylight.db')
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 CREATE_TABLES_SQL = """
+-- Photos
 CREATE TABLE IF NOT EXISTS photos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     filename TEXT NOT NULL UNIQUE,
@@ -54,6 +55,27 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY NOT NULL,
     value TEXT
 );
+
+-- Home Assistant integration
+CREATE TABLE IF NOT EXISTS ha_config (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    url TEXT NOT NULL DEFAULT '',
+    api_key TEXT NOT NULL DEFAULT '',
+    last_synced TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ha_devices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    device_type TEXT NOT NULL DEFAULT 'switch',
+    icon TEXT NOT NULL DEFAULT 'switch',
+    is_active INTEGER NOT NULL DEFAULT 0,
+    is_on INTEGER NOT NULL DEFAULT 0,
+    status TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 SEED_DATA_SQL = """
@@ -75,6 +97,8 @@ INSERT OR IGNORE INTO movie (id, title, year, poster_url, rating, blurb, validat
 );
 
 INSERT OR IGNORE INTO settings (key, value) VALUES ('display_override', NULL);
+
+INSERT OR IGNORE INTO ha_config (id, url, api_key) VALUES (1, '', '');
 """
 
 
