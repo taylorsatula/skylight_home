@@ -531,14 +531,61 @@ body {
   z-index: 200;
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
+  gap: var(--spacing-xs);
+  padding: var(--spacing-md);
   background: var(--surface-dock);
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
   border-radius: var(--radius-xl);
   border: 1px solid rgba(255, 255, 255, 0.08);
   transition: background 0.3s ease;
+}
+
+.dock__home-btn {
+  width: 40px;
+  height: 40px;
+  margin-right: var(--spacing-sm);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--icon-bg-off);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.dock__home-btn:hover {
+  background: var(--surface-dock-hover);
+}
+
+.dock__home-btn:active {
+  transform: scale(0.92);
+}
+
+.dock__home-btn img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  display: block;
+}
+
+.dock__home-btn.is-active {
+  background: var(--icon-bg-on);
+}
+
+.dock__home-btn.is-active img {
+  filter: invert(1);
+}
+
+.dock__separator {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
 }
 
 .dock--photo-mode {
@@ -557,11 +604,11 @@ body {
   align-items: center;
   gap: var(--spacing-md);
   padding: var(--spacing-md) var(--spacing-lg);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--surface-tile);
   cursor: pointer;
   transition: all 0.2s ease;
-  min-height: 56px;
+  min-height: 70px;
   -webkit-user-select: none;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
@@ -583,8 +630,8 @@ body {
 }
 
 .tile__icon {
-  width: 40px;
-  height: 40px;
+  width: 46px;
+  height: 46px;
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;
@@ -595,30 +642,58 @@ body {
   transition: all 0.2s ease;
 }
 
+.tile__icon img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
 .tile__content {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
   min-width: 0;
 }
 
 .tile__name {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.tile__status {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-/* Tile: On / Active */
+/* Tile State: On (yellow bg, inverted icon) */
 .tile--on .tile__icon {
   background: var(--icon-bg-on);
   color: var(--icon-color-on);
 }
 
-/* Tile: Active surface (light mode) */
+.tile--on .tile__icon img {
+  filter: invert(1);
+}
+
+/* Tile State: Lock overrides */
+.tile[data-device-type="lock"] .tile__icon {
+  background: var(--color-accent) !important; /* unlocked = blue */
+}
+
+.tile[data-device-type="lock"].tile--on .tile__icon {
+  background: var(--color-error) !important; /* locked = red */
+}
+
+/* Tile State: Cover overrides */
+.tile[data-device-type="cover"] .tile__icon {
+  background: var(--color-success) !important; /* closed = green */
+}
+
+.tile[data-device-type="cover"].tile--on .tile__icon {
+  background: var(--color-warning) !important; /* open = amber */
+}
+
+/* Tile State: Active surface (light mode) */
 .tile--active {
   background: var(--surface-tile-active);
 }
@@ -632,21 +707,17 @@ body {
   color: var(--icon-color-on);
 }
 
-.tile--active .tile__name {
-  color: var(--text-dark);
+.tile--active .tile__icon img {
+  filter: invert(1);
 }
 
-.tile--active .tile__status {
-  color: var(--text-dark-secondary);
+.tile--active .tile__name {
+  color: var(--text-dark);
 }
 
 /* Tile: Error / Offline */
 .tile--error .tile__icon {
   opacity: 0.4;
-}
-
-.tile--error .tile__status {
-  color: var(--text-muted);
 }
 
 /* ============================================
@@ -829,15 +900,8 @@ body {
   gap: var(--spacing-xl);
 }
 
-.ha-screen__title {
-  font-size: 28px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  letter-spacing: -0.5px;
-  margin: 0;
-}
-
-.ha-screen__grid {
+.ha-screen__scenes,
+.ha-screen__devices {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--spacing-lg);
@@ -845,80 +909,10 @@ body {
   width: 100%;
 }
 
-.ha-device-tile {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-lg) var(--spacing-xl);
-  border-radius: var(--radius-lg);
-  background: var(--surface-tile);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-  outline: none;
-}
-
-.ha-device-tile:hover {
-  background: var(--surface-dock-hover);
-}
-
-.ha-device-tile:active {
-  transform: scale(0.97);
-  opacity: 0.8;
-}
-
-.ha-device-tile * {
-  pointer-events: none;
-}
-
-.ha-device-tile__icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-full);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: var(--icon-bg-off);
-  color: var(--icon-color-off);
-  transition: all 0.2s ease;
-}
-
-.ha-device-tile__icon .icon {
-  width: 28px;
-  height: 28px;
-}
-
-.ha-device-tile__icon--on {
+.ha-screen__divider {
+  border: none;
+  height: 2px;
   background: var(--icon-bg-on);
-  color: var(--icon-color-on);
-}
-
-.ha-device-tile__info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.ha-device-tile__name {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.ha-device-tile__status {
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-
-.ha-device-tile__state {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  flex-shrink: 0;
+  width: 120px;
+  margin: var(--spacing-lg) 0;
 }

@@ -88,6 +88,10 @@ async def serve_scratch_pic(path: str):
 async def serve_weather_icon(path: str):
     return _serve_dashboard(f"weather-icons/{path}")
 
+@app.get("/device-icons/{filename:path}")
+async def serve_device_icon(filename: str):
+    return _serve_dashboard(f"device-icons/{filename}")
+
 # Serve admin PWA at /admin
 if STATIC_DIR.exists():
     app.mount("/admin", StaticFiles(directory=str(STATIC_DIR), html=True), name="admin")

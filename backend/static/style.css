@@ -844,8 +844,13 @@ body {
   margin-bottom: var(--space-lg);
 }
 
+.ha-section {
+  margin-top: var(--space-xl);
+}
+
 .ha-config-card__title,
-.ha-add-device__title {
+.ha-add-device__title,
+.ha-section__title {
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;

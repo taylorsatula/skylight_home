@@ -51,6 +51,7 @@ async function init() {
   renderDisplayOverride();
   renderHaConfig();
   renderHaDevices();
+  renderHaScenes();
   registerServiceWorker();
 }
 
@@ -1020,8 +1021,8 @@ function renderHaDevices() {
         ${device.is_active ? '<span class="ha-device-card__badge">Dock</span>' : ''}
       </div>
       <div class="ha-device-card__actions">
-        <button class="ha-device-card__action-btn" data-toggle-id="${device.id}" aria-label="Toggle ${device.name}">
-          <svg class="icon icon--sm" viewBox="0 0 24 24"><path d="M18.36 5.64l-1.41-1.41A4 4 0 0014 4H4a2 2 0 00-2 2v12a2 2 0 002 2h10a4 4 0 002.94-1.29l1.41-1.41M7 14l2-2 2 2M11 18V10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <button class="ha-device-card__action-btn" onclick="toggleDeviceFavorite(${device.id})" aria-label="Toggle dock">
+          <svg class="icon icon--sm" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${device.is_active ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <button class="ha-device-card__action-btn ha-device-card__action-btn--delete" data-delete-ha-id="${device.id}" aria-label="Delete ${device.name}">
           <svg class="icon icon--sm"><use href="#icon-trash"/></svg>
@@ -1031,6 +1032,60 @@ function renderHaDevices() {
   `).join('');
 
   setupHaDeviceInteractions();
+}
+
+async function toggleDeviceFavorite(id) {
+  const device = state.haDevices.find(d => d.id === id);
+  if (!device) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/devices/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: !device.is_active }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await fetchHaDevices();
+    renderHaDevices();
+  } catch (err) {
+    console.error('Toggle device favorite error:', err);
+    showToast('Update failed');
+  }
+}
+
+// --- Scenes (hardcoded, matches dashboard) ---
+const HA_SCENES = [
+  { id: 'scene.good_morning', name: 'Good Morning', icon: 'sun', is_active: false },
+  { id: 'scene.movie_night', name: 'Movie Night', icon: 'switch', is_active: false },
+  { id: 'scene.away', name: 'Away', icon: 'lock', is_active: false },
+];
+
+function renderHaScenes() {
+  const container = document.getElementById('ha-scenes-list');
+  if (!container) return;
+
+  container.innerHTML = HA_SCENES.map(scene => `
+    <div class="ha-device-card">
+      <div class="ha-device-card__header">
+        <span class="ha-device-card__name">${escapeHtml(scene.name)}</span>
+        <span class="ha-device-card__entity">${escapeHtml(scene.id)}</span>
+      </div>
+      <div class="ha-device-card__body">
+        ${scene.is_active ? '<span class="ha-device-card__badge">Dock</span>' : ''}
+      </div>
+      <div class="ha-device-card__actions">
+        <button class="ha-device-card__action-btn" onclick="toggleSceneActive('${scene.id}')" aria-label="Toggle dock">
+          <svg class="icon icon--sm" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${scene.is_active ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function toggleSceneActive(id) {
+  const scene = HA_SCENES.find(s => s.id === id);
+  if (!scene) return;
+  scene.is_active = !scene.is_active;
+  renderHaScenes();
 }
 
 function setupHaDeviceInteractions() {
@@ -1232,12 +1287,6 @@ async function confirmDeleteHaDevice() {
     deletingHaDeviceId = null;
   }
 }
-
-// HA event listeners
-document.getElementById('ha-save-config-btn')?.addEventListener('click', saveHaConfig);
-document.getElementById('ha-sync-btn')?.addEventListener('click', syncHaDevices);
-document.getElementById('ha-add-device-btn')?.addEventListener('click', addHaDevice);
-document.getElementById('ha-discover-btn')?.addEventListener('click', discoverHaEntities);
 
 setupModals();
 document.addEventListener('DOMContentLoaded', init);

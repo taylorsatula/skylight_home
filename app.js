@@ -14,6 +14,11 @@ let listItems = [];
 let weatherData = null;
 let displayOverride = null;  // Manual override from admin; cleared on schedule change
 let haDevices = [];           // Home Assistant devices (dock + HA screen)
+let haScenes = [
+  { id: 'scene.good_morning', name: 'Good Morning', icon: 'sun', is_active: false },
+  { id: 'scene.movie_night', name: 'Movie Night', icon: 'switch', is_active: false },
+  { id: 'scene.away', name: 'Away', icon: 'lock', is_active: false },
+];
 
 // --- Schedule ---
 // Rules evaluated top-to-bottom; first match wins. Default: photo.
@@ -262,41 +267,70 @@ function updateClock() {
   document.getElementById('clock-date').textContent = `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}`;
 }
 
-// --- SVG Icons ---
+// --- Device Icons (PNG, served from /device-icons/) ---
+// Shared icons use CSS invert(1) for the alternate state.
+const ICON = {
+  light:       '/device-icons/lightbulb.png',
+  fan:         '/device-icons/fan.png',
+  vacuum:      '/device-icons/robotic.vacuum.png',
+  scene:       '/device-icons/square.dashed.png',
+  switch_on:   '/device-icons/lightswitch.on.png',
+  switch_off:  '/device-icons/lightswitch.off.png',
+  lock_on:     '/device-icons/shield.fill.png',
+  lock_off:    '/device-icons/shield.png',
+  cover_on:    '/device-icons/door.garage.open.png',
+  cover_off:   '/device-icons/door.garage.closed.png',
+  climate:     '/device-icons/poweroutlet.type.b.png',
+  default:     '/device-icons/fan.png',
+};
+
+// --- Inline SVG Icons (non-device: interrupts, weather, etc.) ---
 const ICONS = {
-  light: `<svg class="icon" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2v1M4.22 4.22l.71.1M1 12h1M20 12h1M18.36 4.22l-.71.71M12 14a4 4 0 00-8 0"/></svg>`,
-  switch: `<svg class="icon" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><circle cx="12" cy="12" r="2"/></svg>`,
-  climate: `<svg class="icon" viewBox="0 0 24 24"><path d="M12 2v5M12 17v5M4.93 4.93l3.54 3.54M2 12h5M17 12h5M4.93 19.07 7.47 15.53M15.54 8.46 19.07 4.93"/></svg>`,
-  lock: `<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
-  fan: `<svg class="icon" viewBox="0 0 24 24"><path d="M12 12c0-3 2.5-6 6-6M12 12c3 0 6-2.5-6-6M12 12c0 3-2.5 6-6 6M12 12c-3 0-6-2.5-6 6"/><circle cx="12" cy="12" r="2"/></svg>`,
   trash: `<svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 01 2 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 2 01-2-2L5 6"/></svg>`,
   calendar: `<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
-  rain: `<svg class="icon" viewBox="0 0 24 24"><path d="M20 17v1a2 2 0 01-2 2H6a2 2 0 01-2-2M12 14v-3M8 11v-3M16 11v-3"/><path d="M18 10a4 4 0 00-4-4H6a4 4 0 00-4 4c 0 2 1.5 3 3 3.5"/></svg>`,
   sun: `<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`,
-  cloud: `<svg class="icon" viewBox="0 0 24 24"><path d="M18 10a4 4 0 00-4-4 6 6 0 00-6 6 3 3 0 003 3h7a4 4 0 000-8z"/></svg>`,
 };
+
+// --- Icon selection by device type + state ---
+function getDeviceIconSrc(device) {
+  const isOn = !!device.is_on;
+  const type = device.device_type || 'switch';
+
+  if (type === 'climate') return { src: ICON.climate, isOn: false };
+  if (type === 'switch') return { src: isOn ? ICON.switch_on : ICON.switch_off, isOn };
+  if (type === 'lock') return { src: isOn ? ICON.lock_on : ICON.lock_off, isOn };
+  if (type === 'cover') return { src: isOn ? ICON.cover_on : ICON.cover_off, isOn };
+
+  // Shared icon — single image, CSS invert handles off state
+  return { src: ICON[type] || ICON.default, isOn };
+}
+
+function getSceneIconSrc(isActive) {
+  return { src: ICON.scene, isOn: isActive };
+}
 
 // --- Dock ---
 function renderDock() {
   const dock = document.getElementById('dock');
   dock.querySelectorAll('.tile').forEach(t => t.remove());
 
-  haDevices.forEach(device => {
+  haDevices.filter(d => d.is_active).forEach(device => {
     const tile = document.createElement('div');
     const isOn = !!device.is_on;
     const isActive = !!device.is_active;
-    tile.className = `tile${isActive ? ' tile--active' : ''}${isOn ? ' tile--on' : ''}`;
+    const { src: iconSrc, isOn: iconIsOn } = getDeviceIconSrc(device);
+    tile.className = `tile${isActive ? ' tile--active' : ''}${iconIsOn ? ' tile--on' : ''}`;
     tile.dataset.haDeviceId = device.id;
+    tile.dataset.deviceType = device.device_type || 'switch';
     tile.setAttribute('role', 'button');
     tile.setAttribute('aria-label', `${device.name}: ${isOn ? 'on' : 'off'}. Tap to toggle.`);
+    const displayName = device.name.length > 20 ? device.name.slice(0, 20) + '…' : device.name;
     tile.innerHTML = `
-      <div class="tile__icon">${ICONS[device.icon] || ICONS.switch}</div>
+      <div class="tile__icon"><img src="${iconSrc}" alt="" /></div>
       <div class="tile__content">
-        <span class="tile__name">${device.name}</span>
-        <span class="tile__status">${device.status || (isOn ? 'On' : 'Off')}</span>
+        <span class="tile__name">${displayName}</span>
       </div>
     `;
-    // Click handler — toggle the device via HA API
     tile.addEventListener('click', () => toggleHaDevice(device.id));
     dock.appendChild(tile);
   });
@@ -307,14 +341,25 @@ async function toggleHaDevice(deviceId) {
     const res = await fetch(`/api/ha/devices/${deviceId}/toggle`, { method: 'PUT' });
     if (!res.ok) throw new Error(`Toggle failed: ${res.status}`);
     const updated = await res.json();
-    // Update local state immediately
     const idx = haDevices.findIndex(d => d.id === deviceId);
     if (idx !== -1) haDevices[idx] = updated;
     renderDock();
-    // Re-render HA screen if currently showing it
     if (currentInterrupt?.type === 'ha') showHA();
   } catch (err) {
     console.error('Toggle HA device error:', err);
+  }
+}
+
+async function activateHaScene(sceneId) {
+  try {
+    const res = await fetch(`/api/ha/scenes/${sceneId}/activate`, { method: 'POST' });
+    if (!res.ok) throw new Error(`Activate failed: ${res.status}`);
+    // Toggle local active state
+    const scene = haScenes.find(s => s.id === sceneId);
+    if (scene) scene.is_active = !scene.is_active;
+    if (currentInterrupt?.type === 'ha') showHA();
+  } catch (err) {
+    console.error('Activate HA scene error:', err);
   }
 }
 
@@ -392,6 +437,7 @@ function dismissInterrupt() {
   border.className = 'attention-border';
   content.innerHTML = '';
   dock.classList.remove('dock--photo-mode');
+  document.getElementById('dock-home-btn')?.classList.remove('is-active');
 
   if (photoTimer) clearTimeout(photoTimer);
   if (photoCountdownInterval) clearInterval(photoCountdownInterval);
@@ -654,38 +700,57 @@ function showHA() {
   const el = document.querySelector('.interrupt');
   const content = document.getElementById('interrupt-content');
 
-  const gridHTML = haDevices.map(device => {
-    const isOn = !!device.is_on;
-    const iconSVG = ICONS[device.icon] || ICONS.switch;
+  const scenesHTML = haScenes.map(scene => {
+    const { src: iconSrc, isOn: iconIsOn } = getSceneIconSrc(!!scene.is_active);
     return `
-      <div class="ha-device-tile" data-ha-device-id="${device.id}" role="button" aria-label="${device.name}: ${isOn ? 'on' : 'off'}">
-        <div class="ha-device-tile__icon${isOn ? ' ha-device-tile__icon--on' : ''}">${iconSVG}</div>
-        <div class="ha-device-tile__info">
-          <span class="ha-device-tile__name">${device.name}</span>
-          <span class="ha-device-tile__status">${device.status || (isOn ? 'On' : 'Off')}</span>
+      <div class="tile${scene.is_active ? ' tile--active' : ''}${iconIsOn ? ' tile--on' : ''}" data-ha-scene-id="${scene.id}" role="button" aria-label="Activate ${scene.name}">
+        <div class="tile__icon"><img src="${iconSrc}" alt="" /></div>
+        <div class="tile__content">
+          <span class="tile__name">${scene.name}</span>
         </div>
-        <div class="ha-device-tile__state">${isOn ? 'ON' : 'OFF'}</div>
+      </div>
+    `;
+  }).join('');
+
+  const tiles = haDevices.map(device => {
+    const isOn = !!device.is_on;
+    const isActive = !!device.is_active;
+    const { src: iconSrc, isOn: iconIsOn } = getDeviceIconSrc(device);
+    return `
+      <div class="tile${isActive ? ' tile--active' : ''}${iconIsOn ? ' tile--on' : ''}" data-ha-device-id="${device.id}" data-device-type="${device.device_type || 'switch'}" role="button" aria-label="${device.name}: ${isOn ? 'on' : 'off'}. Tap to toggle.">
+        <div class="tile__icon"><img src="${iconSrc}" alt="" /></div>
+        <div class="tile__content">
+          <span class="tile__name">${device.name}</span>
+        </div>
       </div>
     `;
   }).join('');
 
   content.innerHTML = `
-    <div class="ha-screen">
-      <h2 class="ha-screen__title">Home</h2>
-      <div class="ha-screen__grid">${gridHTML}</div>
+    <div class="ha-screen screen">
+      <div class="ha-screen__scenes">${scenesHTML}</div>
+      <hr class="ha-screen__divider" />
+      <div class="ha-screen__devices">${tiles}</div>
     </div>
   `;
 
-  // Wire up click handlers on tiles
-  content.querySelectorAll('.ha-device-tile').forEach(tile => {
+  content.querySelectorAll('[data-ha-device-id]').forEach(tile => {
     tile.addEventListener('click', () => {
       const id = parseInt(tile.dataset.haDeviceId);
       toggleHaDevice(id);
     });
   });
 
+  content.querySelectorAll('[data-ha-scene-id]').forEach(tile => {
+    tile.addEventListener('click', () => {
+      const sceneId = tile.dataset.haSceneId;
+      activateHaScene(sceneId);
+    });
+  });
+
   el.classList.add('interrupt--active', 'interrupt--no-dismiss');
   currentInterrupt = { type: 'ha' };
+  document.getElementById('dock-home-btn')?.classList.add('is-active');
 }
 
 function startPhotoTimer(countdownBar, countdownFill) {
@@ -827,6 +892,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderScreen('photo');
   });
 
+  // Dock home button — toggle HA screen
+  const homeBtn = document.getElementById('dock-home-btn');
+  let prevScreenType = 'photo';
+  if (homeBtn) {
+    homeBtn.addEventListener('click', () => {
+      if (currentInterrupt?.type === 'ha') {
+        dismissInterrupt();
+        renderScreen(prevScreenType);
+        homeBtn.classList.remove('is-active');
+      } else {
+        prevScreenType = currentInterrupt?.type || 'photo';
+        showHA();
+        homeBtn.classList.add('is-active');
+      }
+    });
+  }
+
   // Photo swipe navigation
   initPhotoSwipeListeners();
 
@@ -836,6 +918,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Fetch live data from backend + weather
   await Promise.all([fetchDashboardData(), fetchWeather()]);
+
+  // Render dock with actual data
+  renderDock();
 
   // Connect to SSE for real-time updates
   connectSSE();
