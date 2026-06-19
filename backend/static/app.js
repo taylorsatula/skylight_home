@@ -1022,11 +1022,11 @@ function renderHaDevices() {
         <span class="ha-device-card__status ha-device-card__status--${device.is_on ? 'on' : 'off'}">
           ${device.status || (device.is_on ? 'On' : 'Off')}
         </span>
-        ${device.is_active ? '<span class="ha-device-card__badge">Dock</span>' : ''}
+        ${device.is_favorite ? '<span class="ha-device-card__badge">Dock</span>' : ''}
       </div>
       <div class="ha-device-card__actions">
         <button class="ha-device-card__action-btn" onclick="toggleDeviceFavorite(${device.id})" aria-label="Toggle dock">
-          <svg class="icon icon--sm" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${device.is_active ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="icon icon--sm" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${device.is_favorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <button class="ha-device-card__action-btn ha-device-card__action-btn--delete" data-delete-ha-id="${device.id}" aria-label="Delete ${device.name}">
           <svg class="icon icon--sm"><use href="#icon-trash"/></svg>
@@ -1045,7 +1045,7 @@ async function toggleDeviceFavorite(id) {
     const res = await fetch(`${API_BASE}/api/ha/devices/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_active: !device.is_active }),
+      body: JSON.stringify({ is_favorite: !device.is_favorite }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     await fetchHaDevices();
@@ -1080,11 +1080,11 @@ function renderHaScenes() {
         <span class="ha-device-card__entity">${escapeHtml(scene.entity_id)}</span>
       </div>
       <div class="ha-device-card__body">
-        ${scene.is_active ? '<span class="ha-device-card__badge">Dock</span>' : ''}
+        ${scene.is_favorite ? '<span class="ha-device-card__badge">Dock</span>' : ''}
       </div>
       <div class="ha-device-card__actions">
         <button class="ha-device-card__action-btn" onclick="toggleSceneFavorite(${scene.id})" aria-label="Toggle dock">
-          <svg class="icon icon--sm" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${scene.is_active ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="icon icon--sm" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${scene.is_favorite ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
     </div>
@@ -1098,7 +1098,7 @@ async function toggleSceneFavorite(sceneId) {
     const res = await fetch(`${API_BASE}/api/ha/scenes/${sceneId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_active: !scene.is_active }),
+      body: JSON.stringify({ is_favorite: !scene.is_favorite }),
     });
     if (!res.ok) throw new Error('Update failed');
     await fetchHaScenes();

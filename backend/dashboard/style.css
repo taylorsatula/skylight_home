@@ -703,7 +703,7 @@ body {
   position: fixed;
   bottom: 24px;
   left: 50%;
-  transform: translateX(-50%) scale(0.8);
+  transform: translateX(-50%);
   z-index: 400;
   display: flex;
   align-items: center;
@@ -851,7 +851,15 @@ body {
   text-overflow: ellipsis;
 }
 
-/* Tile State: On (yellow bg, inverted icon) */
+/* Tile State: On (white bg, illuminated icon) */
+.tile--on {
+  background: var(--surface-tile-active);
+}
+
+.tile--on:hover {
+  background: #ebebeb;
+}
+
 .tile--on .tile__icon {
   background: var(--icon-bg-on);
   color: var(--icon-color-on);
@@ -859,6 +867,10 @@ body {
 
 .tile--on .tile__icon img {
   filter: invert(1);
+}
+
+.tile--on .tile__name {
+  color: var(--text-dark);
 }
 
 /* Tile State: Lock overrides */
@@ -879,27 +891,6 @@ body {
   background: var(--color-warning) !important; /* open = amber */
 }
 
-/* Tile State: Active surface (light mode) */
-.tile--active {
-  background: var(--surface-tile-active);
-}
-
-.tile--active:hover {
-  background: #ebebeb;
-}
-
-.tile--active .tile__icon {
-  background: var(--icon-bg-on);
-  color: var(--icon-color-on);
-}
-
-.tile--active .tile__icon img {
-  filter: invert(1);
-}
-
-.tile--active .tile__name {
-  color: var(--text-dark);
-}
 
 /* Tile: Error / Offline */
 .tile--error .tile__icon {
@@ -1171,7 +1162,7 @@ a.app-launcher__item {
    ============================================ */
 .ha-screen {
   gap: var(--spacing-xl);
-  max-height: calc(100vh - 420px);
+  max-height: calc(100vh - 200px);
   overflow-y: auto;
 }
 

@@ -23,8 +23,8 @@ let haScenes = [];            // Home Assistant scenes (fetched from backend)
 const SCHEDULE = [
   // Morning weather — every day 7:00–9:30
   { type: 'weather', start: '07:00', end: '09:30' },
-  // Tuesday trash night — Tue 5:00pm–midnight
-  { type: 'trash', days: [2], start: '17:00', end: '23:59' },
+  // Thursday trash night — Thu 7:00pm–11:59pm
+  { type: 'trash', days: [4], start: '19:00', end: '23:59' },
   // Wednesday movie night — Wed 7:30pm–11:00pm
   { type: 'movie', days: [3], start: '19:30', end: '23:00' },
   // Thursday movie night — Thu 5:00pm–11:00pm
@@ -374,8 +374,8 @@ function getDeviceIconSrc(device) {
   return { src: ICON[type] || ICON.default, isOn };
 }
 
-function getSceneIconSrc(isActive) {
-  return { src: ICON.scene, isOn: isActive };
+function getSceneIconSrc(isOn) {
+  return { src: ICON.scene, isOn };
 }
 
 // --- App Launcher ---
@@ -489,9 +489,8 @@ function createHomeButton() {
 function createTile(device) {
   const tile = document.createElement('div');
   const isOn = !!device.is_on;
-  const isActive = !!device.is_active;
   const { src: iconSrc, isOn: iconIsOn } = getDeviceIconSrc(device);
-  tile.className = `tile${isActive ? ' tile--active' : ''}${iconIsOn ? ' tile--on' : ''}`;
+  tile.className = `tile${isOn ? ' tile--on' : ''}`;
   tile.dataset.haDeviceId = device.id;
   tile.dataset.deviceType = device.device_type || 'switch';
   tile.setAttribute('role', 'button');
@@ -509,9 +508,9 @@ function createTile(device) {
 
 function createSceneTile(scene) {
   const tile = document.createElement('div');
-  const isActive = !!scene.is_active;
-  const { src: iconSrc } = getSceneIconSrc(isActive);
-  tile.className = `tile${isActive ? ' tile--active' : ''}`;
+  const isOn = !!scene.is_on;
+  const { src: iconSrc } = getSceneIconSrc(isOn);
+  tile.className = `tile${isOn ? ' tile--on' : ''}`;
   tile.dataset.haSceneId = scene.id;
   tile.setAttribute('role', 'button');
   tile.setAttribute('aria-label', `Activate ${scene.name}`);
@@ -530,8 +529,8 @@ function renderDock() {
   const dock = document.getElementById('dock');
   dock.innerHTML = '';
 
-  const favDevices = haDevices.filter(d => d.is_active);
-  const favScenes = haScenes.filter(s => s.is_active);
+  const favDevices = haDevices.filter(d => d.is_favorite);
+  const favScenes = haScenes.filter(s => s.is_favorite);
   const totalFavorites = favDevices.length + favScenes.length;
   const isEven = totalFavorites % 2 === 0;
 
@@ -588,7 +587,7 @@ async function activateHaScene(sceneId) {
     if (!res.ok) throw new Error(`Activate failed: ${res.status}`);
     // Toggle local active state
     const scene = haScenes.find(s => s.id === sceneId);
-    if (scene) scene.is_active = !scene.is_active;
+    if (scene) scene.is_on = !scene.is_on;
     if (currentInterrupt?.type === 'ha') showHA();
   } catch (err) {
     console.error('Activate HA scene error:', err);
@@ -1022,9 +1021,10 @@ function showHA() {
   const content = document.getElementById('interrupt-content');
 
   const scenesHTML = haScenes.map(scene => {
-    const { src: iconSrc, isOn: iconIsOn } = getSceneIconSrc(!!scene.is_active);
+    const isOn = !!scene.is_on;
+    const { src: iconSrc, isOn: iconIsOn } = getSceneIconSrc(isOn);
     return `
-      <div class="tile${scene.is_active ? ' tile--active' : ''}${iconIsOn ? ' tile--on' : ''}" data-ha-scene-id="${scene.id}" role="button" aria-label="Activate ${scene.name}">
+      <div class="tile${isOn ? ' tile--on' : ''}" data-ha-scene-id="${scene.id}" role="button" aria-label="Activate ${scene.name}">
         <div class="tile__icon"><img src="${iconSrc}" alt="" /></div>
         <div class="tile__content">
           <span class="tile__name">${scene.name}</span>
@@ -1035,10 +1035,9 @@ function showHA() {
 
   const tiles = haDevices.map(device => {
     const isOn = !!device.is_on;
-    const isActive = !!device.is_active;
     const { src: iconSrc, isOn: iconIsOn } = getDeviceIconSrc(device);
     return `
-      <div class="tile${isActive ? ' tile--active' : ''}${iconIsOn ? ' tile--on' : ''}" data-ha-device-id="${device.id}" data-device-type="${device.device_type || 'switch'}" role="button" aria-label="${device.name}: ${isOn ? 'on' : 'off'}. Tap to toggle.">
+      <div class="tile${isOn ? ' tile--on' : ''}" data-ha-device-id="${device.id}" data-device-type="${device.device_type || 'switch'}" role="button" aria-label="${device.name}: ${isOn ? 'on' : 'off'}. Tap to toggle.">
         <div class="tile__icon"><img src="${iconSrc}" alt="" /></div>
         <div class="tile__content">
           <span class="tile__name">${device.name}</span>

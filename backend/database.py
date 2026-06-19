@@ -10,7 +10,7 @@ from datetime import datetime
 DB_DIR = os.path.join(os.path.dirname(__file__), 'data')
 DB_PATH = os.path.join(DB_DIR, 'skylight.db')
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 CREATE_TABLES_SQL = """
 -- Photos
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS ha_devices (
     name TEXT NOT NULL,
     device_type TEXT NOT NULL DEFAULT 'switch',
     icon TEXT NOT NULL DEFAULT 'switch',
-    is_active INTEGER NOT NULL DEFAULT 0,
+    is_favorite INTEGER NOT NULL DEFAULT 0,
     is_on INTEGER NOT NULL DEFAULT 0,
     status TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS ha_scenes (
     entity_id TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     icon TEXT NOT NULL DEFAULT 'scene',
-    is_active INTEGER NOT NULL DEFAULT 0,
+    is_favorite INTEGER NOT NULL DEFAULT 0,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

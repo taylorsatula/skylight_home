@@ -28,14 +28,14 @@ class HaDeviceCreate(BaseModel):
     name: str
     device_type: str = 'switch'
     icon: str = 'switch'
-    is_active: bool = False
+    is_favorite: bool = False
     sort_order: Optional[int] = None
 
 class HaDeviceUpdate(BaseModel):
     name: Optional[str] = None
     device_type: Optional[str] = None
     icon: Optional[str] = None
-    is_active: Optional[bool] = None
+    is_favorite: Optional[bool] = None
     sort_order: Optional[int] = None
 
 class ReorderRequest(BaseModel):
@@ -45,13 +45,13 @@ class HaSceneCreate(BaseModel):
     entity_id: str
     name: str
     icon: str = 'scene'
-    is_active: bool = False
+    is_favorite: bool = False
     sort_order: Optional[int] = None
 
 class HaSceneUpdate(BaseModel):
     name: Optional[str] = None
     icon: Optional[str] = None
-    is_active: Optional[bool] = None
+    is_favorite: Optional[bool] = None
     sort_order: Optional[int] = None
 
 # ---------------------------------------------------------------------------
@@ -173,8 +173,8 @@ async def create_ha_device(data: HaDeviceCreate):
     db = get_db()
     try:
         cursor = db.execute(
-            "INSERT INTO ha_devices (entity_id, name, device_type, icon, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
-            (data.entity_id, data.name, data.device_type, data.icon, 1 if data.is_active else 0, data.sort_order or 0),
+            "INSERT INTO ha_devices (entity_id, name, device_type, icon, is_favorite, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+            (data.entity_id, data.name, data.device_type, data.icon, 1 if data.is_favorite else 0, data.sort_order or 0),
         )
         db.commit()
         asyncio.create_task(_emit('ha-devices'))
@@ -196,8 +196,8 @@ async def update_ha_device(device_id: int, data: HaDeviceUpdate):
             updates.append("device_type = ?"); params.append(data.device_type)
         if data.icon is not None:
             updates.append("icon = ?"); params.append(data.icon)
-        if data.is_active is not None:
-            updates.append("is_active = ?"); params.append(1 if data.is_active else 0)
+        if data.is_favorite is not None:
+            updates.append("is_favorite = ?"); params.append(1 if data.is_favorite else 0)
         if data.sort_order is not None:
             updates.append("sort_order = ?"); params.append(data.sort_order)
         if not updates:
@@ -283,7 +283,7 @@ async def sync_ha_devices():
                 # New scene discovered — extract a friendly name from entity_id
                 friendly_name = entity_id.replace('scene.', '').replace('_', ' ').title()
                 db.execute(
-                    "INSERT INTO ha_scenes (entity_id, name, icon, is_active, sort_order) VALUES (?, ?, ?, 0, 0)",
+                    "INSERT INTO ha_scenes (entity_id, name, icon, is_favorite, sort_order) VALUES (?, ?, ?, 0, 0)",
                     (entity_id, friendly_name, 'scene'),
                 )
 
@@ -410,8 +410,8 @@ async def create_ha_scene(data: HaSceneCreate):
     db = get_db()
     try:
         cursor = db.execute(
-            "INSERT INTO ha_scenes (entity_id, name, icon, is_active, sort_order) VALUES (?, ?, ?, ?, ?)",
-            (data.entity_id, data.name, data.icon, 1 if data.is_active else 0, data.sort_order or 0),
+            "INSERT INTO ha_scenes (entity_id, name, icon, is_favorite, sort_order) VALUES (?, ?, ?, ?, ?)",
+            (data.entity_id, data.name, data.icon, 1 if data.is_favorite else 0, data.sort_order or 0),
         )
         db.commit()
         asyncio.create_task(_emit('ha-scenes'))
@@ -431,8 +431,8 @@ async def update_ha_scene(scene_id: int, data: HaSceneUpdate):
             updates.append("name = ?"); params.append(data.name)
         if data.icon is not None:
             updates.append("icon = ?"); params.append(data.icon)
-        if data.is_active is not None:
-            updates.append("is_active = ?"); params.append(1 if data.is_active else 0)
+        if data.is_favorite is not None:
+            updates.append("is_favorite = ?"); params.append(1 if data.is_favorite else 0)
         if data.sort_order is not None:
             updates.append("sort_order = ?"); params.append(data.sort_order)
         if not updates:
