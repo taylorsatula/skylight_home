@@ -298,7 +298,7 @@ const ICON = {
   light:       '/device-icons/lightbulb.png',
   fan:         '/device-icons/fan.png',
   vacuum:      '/device-icons/robotic.vacuum.png',
-  scene:       '/device-icons/square.dashed.png',
+  scene:       '/device-icons/scene.png',
   switch_on:   '/device-icons/lightswitch.on.png',
   switch_off:  '/device-icons/lightswitch.off.png',
   lock_on:     '/device-icons/shield.fill.png',
@@ -343,6 +343,7 @@ const LAUNCHER_APPS = [
   { id: 'list', label: 'List', icon: '/device-icons/list.png' },
   { id: 'movie', label: 'Movie', icon: '/device-icons/movie.png' },
   { id: 'ha', label: 'Home', icon: '/device-icons/home.png' },
+  { href: '/admin', label: 'Settings', icon: '/device-icons/settings.png' },
 ];
 
 let launcherOpen = false;
@@ -356,28 +357,42 @@ function createAppLauncher() {
   grid.className = 'app-launcher__grid';
 
   LAUNCHER_APPS.forEach(app => {
-    const item = document.createElement('button');
-    item.className = 'app-launcher__item';
-    item.setAttribute('aria-label', `Show ${app.label}`);
-    item.innerHTML = `
-      <div class="app-launcher__icon"><img src="${app.icon}" alt="" /></div>
-      <span class="app-launcher__label">${app.label}</span>
-    `;
-    item.addEventListener('click', async () => {
-      const screenValue = app.id; // null for auto
-      try {
-        await fetch('/api/display-override', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ screen: screenValue }),
-        });
-        displayOverride = screenValue;
-      } catch (err) {
-        console.error('Failed to set display override:', err);
-      }
-      closeAppLauncher();
-    });
-    grid.appendChild(item);
+    if (app.href) {
+      // Link item — navigates away (e.g., Settings → admin)
+      const item = document.createElement('a');
+      item.className = 'app-launcher__item';
+      item.href = app.href;
+      item.setAttribute('aria-label', app.label);
+      item.innerHTML = `
+        <div class="app-launcher__icon"><img src="${app.icon}" alt="" /></div>
+        <span class="app-launcher__label">${app.label}</span>
+      `;
+      grid.appendChild(item);
+    } else {
+      // Screen switch item
+      const item = document.createElement('button');
+      item.className = 'app-launcher__item';
+      item.setAttribute('aria-label', `Show ${app.label}`);
+      item.innerHTML = `
+        <div class="app-launcher__icon"><img src="${app.icon}" alt="" /></div>
+        <span class="app-launcher__label">${app.label}</span>
+      `;
+      item.addEventListener('click', async () => {
+        const screenValue = app.id; // null for auto
+        try {
+          await fetch('/api/display-override', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ screen: screenValue }),
+          });
+          displayOverride = screenValue;
+        } catch (err) {
+          console.error('Failed to set display override:', err);
+        }
+        closeAppLauncher();
+      });
+      grid.appendChild(item);
+    }
   });
 
   overlay.appendChild(grid);
@@ -489,11 +504,13 @@ function renderDock() {
     }
     favScenes.forEach(scene => dock.appendChild(createSceneTile(scene)));
   } else {
-    // Odd (or zero): [home][sep][tiles…]
+    // Odd (or zero): [home][sep?][tiles…]
     dock.appendChild(createHomeButton());
-    const sep = document.createElement('div');
-    sep.className = 'dock__separator';
-    dock.appendChild(sep);
+    if (totalFavorites > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'dock__separator';
+      dock.appendChild(sep);
+    }
     favDevices.forEach(device => dock.appendChild(createTile(device)));
     favScenes.forEach(scene => dock.appendChild(createSceneTile(scene)));
   }

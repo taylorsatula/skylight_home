@@ -790,6 +790,12 @@ body {
   opacity: 0.7;
 }
 
+/* Anchor variant (Settings link) */
+a.app-launcher__item {
+  color: inherit;
+  text-decoration: inherit;
+}
+
 .app-launcher__item:active {
   opacity: 0.5;
 }

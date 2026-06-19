@@ -52,8 +52,13 @@
 
   <!-- Header -->
   <header class="app-header">
-    <h1 class="app-title">Skylight</h1>
-    <span class="app-subtitle">Admin</span>
+    <div class="app-title-group">
+      <h1 class="app-title">Skylight</h1>
+      <span class="app-subtitle">Admin</span>
+    </div>
+    <a href="/" class="app-back-btn" aria-label="Back to dashboard">
+      <img src="icons/back.png" alt="Back" />
+    </a>
   </header>
 
   <!-- Main Content -->
@@ -131,21 +136,6 @@
           <button class="btn btn--add" id="ha-sync-btn">Sync States</button>
         </div>
         <div id="ha-last-synced" class="ha-config-card__status"></div>
-      </div>
-
-      <!-- Add Device -->
-      <div class="ha-add-device">
-        <h3 class="ha-add-device__title">Add Device</h3>
-        <input type="text" id="ha-entity-id" class="input" placeholder="Entity ID (e.g., light.bedroom)">
-        <input type="text" id="ha-device-name" class="input" placeholder="Display name">
-        <select id="ha-device-type" class="input ha-device-select">
-          <option value="switch">Switch</option>
-          <option value="light">Light</option>
-          <option value="fan">Fan</option>
-          <option value="lock">Lock</option>
-          <option value="climate">Climate</option>
-        </select>
-        <button class="btn btn--save" id="ha-add-device-btn">Add Device</button>
       </div>
 
       <!-- Discover Entities -->

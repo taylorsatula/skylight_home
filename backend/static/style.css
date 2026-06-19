@@ -78,6 +78,9 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   background: var(--surface-glass);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -97,6 +100,42 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   margin-left: var(--space-xs);
+}
+
+.app-title-group {
+  display: flex;
+  align-items: baseline;
+}
+
+.app-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.app-back-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.app-back-btn:active {
+  opacity: 0.6;
+}
+
+.app-back-btn img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
 }
 
 /* --- Main Content --- */

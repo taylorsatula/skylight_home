@@ -1182,45 +1182,6 @@ async function syncHaDevices() {
   }
 }
 
-// Add HA device
-async function addHaDevice() {
-  const entityId = document.getElementById('ha-entity-id').value.trim();
-  const name = document.getElementById('ha-device-name').value.trim();
-  const deviceType = document.getElementById('ha-device-type').value;
-
-  if (!entityId || !name) {
-    showToast('Entity ID and name are required');
-    return;
-  }
-
-  // Determine icon based on type
-  const iconMap = { switch: 'switch', light: 'light', fan: 'fan', lock: 'lock', climate: 'climate' };
-
-  try {
-    const res = await fetch(`${API_BASE}/api/ha/devices`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        entity_id: entityId,
-        name,
-        device_type: deviceType,
-        icon: iconMap[deviceType] || 'switch',
-      }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    await fetchHaDevices();
-    renderHaDevices();
-    showToast(`Added "${name}"`);
-
-    // Clear inputs
-    document.getElementById('ha-entity-id').value = '';
-    document.getElementById('ha-device-name').value = '';
-  } catch (err) {
-    console.error('Add device error:', err);
-    showToast(err.message.includes('already exists') ? 'Entity already added' : 'Failed to add device');
-  }
-}
-
 
 
 // Discover entities from HA
