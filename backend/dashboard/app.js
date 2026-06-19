@@ -261,7 +261,7 @@ function showEmptyState(type) {
     <div class="screen">
       <div class="memo">
         <h2 class="memo__title">${label}</h2>
-        <p class="memo__text">Add some content in the admin panel on your phone.</p>
+        <p class="memo__text">Add some content in Settings (dock).</p>
       </div>
     </div>
   `;
@@ -812,7 +812,7 @@ function showList(items) {
       <div class="list">
         <ul class="list__items">${listHTML}</ul>
       </div>
-      <span class="screen-edit-pill">edit in the admin panel on your phone</span>
+      <span class="screen-edit-pill">Edit in Settings (dock)</span>
     </div>
   `;
 
@@ -831,7 +831,7 @@ function showMemo(title, text) {
         <h2 class="memo__title">${title}</h2>
         <p class="memo__text">${text}</p>
       </div>
-      <span class="screen-edit-pill">edit in the admin panel on your phone</span>
+      <span class="screen-edit-pill">Edit in Settings (dock)</span>
     </div>
   `;
 
