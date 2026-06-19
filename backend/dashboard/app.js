@@ -68,19 +68,19 @@ function renderScreen(type) {
       break;
     case 'movie':
       if (movieData) showMovie();
-      else showPhoto();
+      else showEmptyState('movie');
       break;
     case 'memo':
       if (memoData) showMemo(memoData.title, memoData.content);
-      else showPhoto();
+      else showEmptyState('memo');
       break;
     case 'list':
       if (listItems.length) showList(listItems.map(i => i.text));
-      else showPhoto();
+      else showEmptyState('list');
       break;
     case 'ha':
       if (haDevices.length) showHA();
-      else showPhoto();
+      else showEmptyState('ha');
       break;
     case 'trash':
       showTrashNight();
@@ -243,6 +243,31 @@ function showError() {
 
   el.classList.add('interrupt--active', 'interrupt--no-dismiss');
   currentInterrupt = { type: 'error' };
+}
+
+const EMPTY_STATE_LABELS = {
+  movie: 'No movie selected',
+  memo: 'No memo set',
+  list: 'No items on the list',
+  ha: 'No Home Assistant devices favorited',
+};
+
+function showEmptyState(type) {
+  const label = EMPTY_STATE_LABELS[type] || 'Nothing here yet';
+  const el = document.querySelector('.interrupt');
+  const content = document.getElementById('interrupt-content');
+
+  content.innerHTML = `
+    <div class="screen">
+      <div class="memo">
+        <h2 class="memo__title">${label}</h2>
+        <p class="memo__text">Add some content in the admin panel on your phone.</p>
+      </div>
+    </div>
+  `;
+
+  el.classList.add('interrupt--active', 'interrupt--no-dismiss');
+  currentInterrupt = { type: 'empty-' + type };
 }
 
 // --- State ---
@@ -916,7 +941,7 @@ function startPhotoTimer(countdownBar, countdownFill) {
 
   if (photoTimer) clearTimeout(photoTimer);
   photoTimer = setTimeout(() => {
-    showPhoto();
+    if (currentInterrupt?.type === 'photo') showPhoto();
   }, PHOTO_INTERVAL);
 }
 
