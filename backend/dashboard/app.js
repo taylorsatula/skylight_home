@@ -24,18 +24,21 @@ const SCHEDULE = [
   // Morning weather — every day 7:00–9:30
   { type: 'weather', start: '07:00', end: '09:30' },
   // Tuesday trash night — Tue 5:00pm–midnight
-  { type: 'trash', days: [2], start: '17:00', end: '23:59' },
+  { type: 'trash', days: [5], start: '00:00', end: '01:00' },
   // Wednesday movie night — Wed 7:30pm–11:00pm
   { type: 'movie', days: [3], start: '19:30', end: '23:00' },
   // Thursday movie night — Thu 5:00pm–11:00pm
   { type: 'movie', days: [4], start: '17:00', end: '23:00' },
 ];
 
-function getScheduledScreen() {
-  // Manual override takes precedence
-  if (displayOverride) return displayOverride;
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
-  const now = new Date();
+function getScheduledScreen(now = new Date()) {
   const day = now.getDay();
   const minutes = now.getHours() * 60 + now.getMinutes();
 
@@ -46,6 +49,18 @@ function getScheduledScreen() {
     if (minutes >= sh * 60 + sm && minutes < eh * 60 + em) return rule.type;
   }
   return 'photo';
+}
+
+function getRequestedScreen() {
+  // Schedule-driven alerts (e.g. trash) always break through a manual override.
+  const scheduled = getScheduledScreen();
+  if (scheduled === 'trash') return scheduled;
+  return displayOverride || scheduled;
+}
+
+function getEffectiveScreen(requested = getRequestedScreen()) {
+  if (requested === 'trash' && trashDismissedDate === getLocalDateKey()) return 'photo';
+  return requested;
 }
 
 function getScheduleSlot() {
@@ -62,9 +77,14 @@ function getScheduleSlot() {
 
 function renderScreen(type) {
   switch (type) {
+    case 'photo':
+      if (photoUrls.length) showPhoto();
+      else showEmptyState('photo');
+      break;
     case 'weather':
       if (weatherData) showWeather(weatherData);
-      else showPhoto();
+      else if (photoUrls.length) showPhoto();
+      else showEmptyState('weather');
       break;
     case 'movie':
       if (movieData) showMovie();
@@ -79,31 +99,48 @@ function renderScreen(type) {
       else showEmptyState('list');
       break;
     case 'ha':
-      if (haDevices.length) showHA();
+      if (haDevices.length || haScenes.length) showHA();
       else showEmptyState('ha');
       break;
     case 'trash':
       showTrashNight();
       break;
     default:
-      showPhoto();
+      if (photoUrls.length) showPhoto();
+      else showEmptyState('photo');
   }
 }
 
+function displayScreen(screen, { force = false } = {}) {
+  if (!force && renderedScreen === screen) return;
+  dismissInterrupt();
+  renderScreen(screen);
+  renderedScreen = screen;
+}
+
+function reconcileDisplay({ force = false } = {}) {
+  displayScreen(getEffectiveScreen(), { force });
+}
+
 function showScheduledScreen() {
-  renderScreen(getScheduledScreen());
+  reconcileDisplay({ force: true });
+}
+
+async function fetchJsonOrDefault(url, fallback) {
+  const res = await fetch(url);
+  return res.ok ? res.json() : fallback;
 }
 
 async function fetchDashboardData() {
   try {
     const [photosRes, movieRes, memoRes, listRes, overrideRes, devicesRes, scenesRes] = await Promise.all([
-      fetch('/api/photos').then(r => r.ok ? r.json() : []).catch(() => []),
-      fetch('/api/movie').then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch('/api/memo').then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch('/api/list-items').then(r => r.ok ? r.json() : []).catch(() => []),
-      fetch('/api/display-override').then(r => r.ok ? r.json() : {}).catch(() => ({})),
-      fetch('/api/ha/devices').then(r => r.ok ? r.json() : []).catch(() => []),
-      fetch('/api/ha/scenes').then(r => r.ok ? r.json() : []).catch(() => []),
+      fetchJsonOrDefault('/api/photos', []),
+      fetchJsonOrDefault('/api/movie', null),
+      fetchJsonOrDefault('/api/memo', null),
+      fetchJsonOrDefault('/api/list-items', []),
+      fetchJsonOrDefault('/api/display-override', {}),
+      fetchJsonOrDefault('/api/ha/devices', []),
+      fetchJsonOrDefault('/api/ha/scenes', []),
     ]);
 
     photoUrls = photosRes.map(p => `/photos/${p.filename}`);
@@ -113,9 +150,11 @@ async function fetchDashboardData() {
     displayOverride = overrideRes.screen || null;
     haDevices = devicesRes;
     haScenes = scenesRes;
+    return true;
   } catch (err) {
     console.error('Failed to fetch dashboard data:', err);
     showError();
+    return false;
   }
 }
 
@@ -212,19 +251,7 @@ async function fetchWeather() {
 
 // --- Trash Night Interrupt ---
 function showTrashNight() {
-  const today = new Date().toISOString().slice(0, 10);
-  if (trashDismissedDate === today) {
-    renderScreen('photo');
-    return;
-  }
-  showInterrupt({
-    type: 'trash',
-    title: 'Trash Night',
-    message: 'Don\'t forget to take out the trash tonight.',
-    meta: 'Dismiss when done',
-    icon: ICONS.trash,
-    priority: 'urgent',
-  });
+  new TrashNightAlert().show();
 }
 
 // --- Error State ---
@@ -243,9 +270,12 @@ function showError() {
 
   el.classList.add('interrupt--active', 'interrupt--no-dismiss');
   currentInterrupt = { type: 'error' };
+  renderedScreen = 'error';
 }
 
 const EMPTY_STATE_LABELS = {
+  photo: 'No photos available',
+  weather: 'Weather unavailable',
   movie: 'No movie selected',
   memo: 'No memo set',
   list: 'No items on the list',
@@ -268,10 +298,12 @@ function showEmptyState(type) {
 
   el.classList.add('interrupt--active', 'interrupt--no-dismiss');
   currentInterrupt = { type: 'empty-' + type };
+  if (type === 'ha') document.getElementById('dock-home-btn')?.classList.add('is-active');
 }
 
 // --- State ---
 let currentInterrupt = null;
+let renderedScreen = null;
 let photoTimer = null;
 let photoCountdownInterval = null;
 let trashDismissedDate = null; // Tracks whether trash was dismissed today
@@ -385,7 +417,7 @@ function createAppLauncher() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ screen: screenValue }),
           });
-          displayOverride = screenValue;
+          // Let the SSE echo from the backend update local display state.
         } catch (err) {
           console.error('Failed to set display override:', err);
         }
@@ -514,6 +546,14 @@ function renderDock() {
     favDevices.forEach(device => dock.appendChild(createTile(device)));
     favScenes.forEach(scene => dock.appendChild(createSceneTile(scene)));
   }
+
+  const homeBtn = document.getElementById('dock-home-btn');
+  if (currentInterrupt?.type === 'ha' || renderedScreen === 'ha') homeBtn?.classList.add('is-active');
+  if (launcherOpen) {
+    homeBtn?.classList.add('dock__home-btn--launcher-open');
+    const img = homeBtn?.querySelector('img');
+    if (img) img.src = '/device-icons/dock_close.png';
+  }
 }
 
 async function toggleHaDevice(deviceId) {
@@ -544,26 +584,93 @@ async function activateHaScene(sceneId) {
 }
 
 
-// --- Interrupt System ---
-function showInterrupt({ type = 'interrupt', title, message, meta, icon, priority = 'info' }) {
-  currentInterrupt = { type, title, message, meta, icon, priority };
+// --- Fullscreen Alert System ---
+class FullscreenAlert {
+  constructor({
+    type = 'alert',
+    title,
+    message = null,
+    meta = null,
+    icon = null,
+    priority = 'info',
+    iconColor = null,
+    dismissible = true,
+  }) {
+    this.type = type;
+    this.title = title;
+    this.message = message;
+    this.meta = meta;
+    this.icon = icon;
+    this.priority = priority;
+    this.iconColor = iconColor;
+    this.dismissible = dismissible;
+  }
 
-  const el = document.getElementById('interrupt');
-  const content = document.getElementById('interrupt-content');
-  const border = document.querySelector('.attention-border');
+  get state() {
+    return {
+      type: this.type,
+      title: this.title,
+      message: this.message,
+      meta: this.meta,
+      icon: this.icon,
+      priority: this.priority,
+    };
+  }
 
-  content.innerHTML = `
-    ${icon ? `<div class="interrupt__icon">${icon}</div>` : ''}
-    <div class="interrupt__title">${title}</div>
-    ${message ? `<div class="interrupt__message">${message}</div>` : ''}
-    ${meta ? `<div class="interrupt__meta">${meta}</div>` : ''}
-  `;
+  show() {
+    currentInterrupt = this.state;
 
-  el.classList.add('interrupt--active');
-  el.classList.remove('interrupt--no-dismiss');
+    const el = document.getElementById('interrupt');
+    const content = document.getElementById('interrupt-content');
+    const border = document.querySelector('.attention-border');
 
-  // Show attention border based on priority
-  border.className = 'attention-border attention-border--active attention-border--' + priority;
+    content.innerHTML = `
+      ${this.icon ? `<div class="interrupt__icon">${this.icon}</div>` : ''}
+      <div class="interrupt__title">${this.title}</div>
+      ${this.message ? `<div class="interrupt__message">${this.message}</div>` : ''}
+      ${this.meta ? `<div class="interrupt__meta">${this.meta}</div>` : ''}
+    `;
+
+    el.style.removeProperty('--fullscreen-alert-icon-color');
+    if (this.iconColor) el.style.setProperty('--fullscreen-alert-icon-color', this.iconColor);
+
+    el.classList.add('interrupt--active', 'interrupt--' + this.priority);
+    el.classList.toggle('interrupt--no-dismiss', !this.dismissible);
+
+    border.className = 'attention-border attention-border--active attention-border--' + this.priority;
+  }
+}
+
+class TrashNightAlert extends FullscreenAlert {
+  constructor() {
+    super({
+      type: 'trash',
+      title: 'Trash Night',
+      message: 'Don\'t forget to take out the trash tonight.',
+      meta: 'Dismiss when done',
+      icon: ICONS.trash,
+      priority: 'urgent',
+      iconColor: 'var(--color-error)',
+    });
+  }
+}
+
+class CalendarEventAlert extends FullscreenAlert {
+  constructor(event) {
+    super({
+      type: 'calendar',
+      title: event.title,
+      message: event.time,
+      meta: event.location || null,
+      icon: ICONS.calendar,
+      priority: 'info',
+      iconColor: 'var(--color-accent)',
+    });
+  }
+}
+
+function showInterrupt(options) {
+  new FullscreenAlert(options).show();
 }
 
 function showWeather({ temp, unit, condition, high, low, feelsLike, icon, nowPct }) {
@@ -606,8 +713,8 @@ function showWeather({ temp, unit, condition, high, low, feelsLike, icon, nowPct
   currentInterrupt = { type: 'weather' };
 }
 
-function dismissInterrupt() {
-  const wasTrash = currentInterrupt?.type === 'trash';
+function dismissInterrupt({ markTrashDone = false } = {}) {
+  const dismissedType = currentInterrupt?.type || null;
   currentInterrupt = null;
 
   const el = document.getElementById('interrupt');
@@ -615,7 +722,14 @@ function dismissInterrupt() {
   const content = document.getElementById('interrupt-content');
   const dock = document.getElementById('dock');
 
-  el.classList.remove('interrupt--active', 'interrupt--no-dismiss');
+  el.classList.remove(
+    'interrupt--active',
+    'interrupt--no-dismiss',
+    'interrupt--urgent',
+    'interrupt--normal',
+    'interrupt--info',
+  );
+  el.style.removeProperty('--fullscreen-alert-icon-color');
   border.className = 'attention-border';
   content.innerHTML = '';
   dock.classList.remove('dock--photo-mode');
@@ -625,7 +739,8 @@ function dismissInterrupt() {
   if (photoCountdownInterval) clearInterval(photoCountdownInterval);
   document.getElementById('countdown-bar').style.display = 'none';
 
-  if (wasTrash) trashDismissedDate = new Date().toISOString().slice(0, 10);
+  if (markTrashDone && dismissedType === 'trash') trashDismissedDate = getLocalDateKey();
+  return dismissedType;
 }
 
 // --- Photo Frame Interrupt ---
@@ -839,17 +954,9 @@ function showMemo(title, text) {
   currentInterrupt = { type: 'memo' };
 }
 
-// --- Calendar Event Interrupt (unified with interrupt system) ---
+// --- Calendar Event Interrupt ---
 function showCalendarEvent(event) {
-  showInterrupt({
-    title: event.title,
-    message: event.time,
-    meta: event.location || null,
-    icon: ICONS.calendar,
-    priority: 'info',
-  });
-  // Override icon color to blue for calendar events
-  document.querySelector('.interrupt__icon').style.color = 'var(--color-accent)';
+  new CalendarEventAlert(event).show();
 }
 
 // --- Movie Poster Interrupt ---
@@ -962,124 +1069,206 @@ function startPhotoTimer(countdownBar, countdownFill) {
   }, PHOTO_INTERVAL);
 }
 
+// --- Timed Display Changes ---
+let scheduleTimer = null;
+let lastScheduleSlot = null;
+
+function minutesFromTime(time) {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function dateForDayAndMinute(from, dayOffset, minuteOfDay) {
+  const date = new Date(from);
+  date.setHours(0, minuteOfDay, 0, 0);
+  date.setDate(date.getDate() + dayOffset);
+  return date;
+}
+
+function getNextScheduleBoundary(from = new Date()) {
+  let next = null;
+
+  for (let dayOffset = 0; dayOffset <= 7; dayOffset += 1) {
+    const date = new Date(from);
+    date.setDate(date.getDate() + dayOffset);
+    const day = date.getDay();
+
+    for (const rule of SCHEDULE) {
+      if (rule.days && !rule.days.includes(day)) continue;
+
+      for (const minuteOfDay of [minutesFromTime(rule.start), minutesFromTime(rule.end)]) {
+        const candidate = dateForDayAndMinute(from, dayOffset, minuteOfDay);
+        if (candidate <= from) continue;
+        if (!next || candidate < next) next = candidate;
+      }
+    }
+  }
+
+  return next;
+}
+
+function getNextHalfHourBoundary(from = new Date()) {
+  const next = new Date(from);
+  next.setSeconds(0, 0);
+  const minutes = next.getMinutes();
+  next.setMinutes(minutes < 30 ? 30 : 60);
+  return next;
+}
+
+function getNextDisplayEventTime(from = new Date()) {
+  // Manual overrides expire on the next 30-minute slot; otherwise wait for the
+  // next schedule rule boundary. This replaces minute polling with one-shot
+  // timed display events.
+  if (displayOverride) return getNextHalfHourBoundary(from);
+  return getNextScheduleBoundary(from);
+}
+
+async function clearOverrideIfSlotChanged() {
+  const currentSlot = getScheduleSlot();
+  if (!lastScheduleSlot) lastScheduleSlot = currentSlot;
+
+  if (displayOverride && currentSlot !== lastScheduleSlot) {
+    try {
+      await fetch('/api/display-override', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ screen: null }),
+      });
+      lastScheduleSlot = currentSlot;
+      return true;
+    } catch (err) {
+      console.error('Failed to clear display override:', err);
+      showError();
+    }
+  }
+
+  lastScheduleSlot = currentSlot;
+  return false;
+}
+
+function scheduleNextDisplayEvent() {
+  if (scheduleTimer) clearTimeout(scheduleTimer);
+
+  const now = new Date();
+  const next = getNextDisplayEventTime(now);
+  if (!next) return;
+
+  const delay = Math.max(1000, next.getTime() - now.getTime() + 250);
+  scheduleTimer = setTimeout(async () => {
+    const waitingForOverrideEcho = await clearOverrideIfSlotChanged();
+    if (!waitingForOverrideEcho) {
+      reconcileDisplay();
+      scheduleNextDisplayEvent();
+    }
+  }, delay);
+}
+
 // --- SSE Real-Time Updates ---
 let sseSource = null;
+let sseDisconnectedTimer = null;
+
+function currentScreenUsesEvent(eventType) {
+  switch (eventType) {
+    case 'photos':
+      return renderedScreen === 'photo' || (renderedScreen === 'weather' && !weatherData);
+    case 'memo':
+      return renderedScreen === 'memo';
+    case 'movie':
+      return renderedScreen === 'movie';
+    case 'list-items':
+      return renderedScreen === 'list';
+    case 'ha-devices':
+    case 'ha-scenes':
+      return renderedScreen === 'ha';
+    default:
+      return false;
+  }
+}
+
+async function refreshDashboardAndReconcile({ force = false } = {}) {
+  const ok = await fetchDashboardData();
+  if (!ok) return;
+  renderDock();
+  reconcileDisplay({ force: force || renderedScreen === 'error' });
+  scheduleNextDisplayEvent();
+}
 
 function connectSSE() {
   sseSource = new EventSource('/api/events');
 
+  sseSource.onopen = () => {
+    if (sseDisconnectedTimer) {
+      clearTimeout(sseDisconnectedTimer);
+      sseDisconnectedTimer = null;
+    }
+    refreshDashboardAndReconcile({ force: currentInterrupt?.type === 'error' });
+  };
+
   sseSource.addEventListener('update', (e) => {
-    const eventType = e.data; // 'photos', 'memo', 'movie', 'list-items', 'display-override'
+    const eventType = e.data; // 'photos', 'memo', 'movie', 'list-items', 'display-override', 'ha-devices', 'ha-scenes'
     handleSSEUpdate(eventType);
   });
 
   sseSource.onerror = () => {
     console.log('SSE connection lost — reconnecting…');
-    // EventSource auto-reconnects, no action needed
+    if (!sseDisconnectedTimer) {
+      sseDisconnectedTimer = setTimeout(() => {
+        showError();
+      }, 10000);
+    }
+    // EventSource auto-reconnects; onopen will refresh current truth.
   };
 }
 
 async function handleSSEUpdate(eventType) {
-  // Save previous state snapshots
-  const prev = {
-    photos: JSON.stringify(photoUrls),
-    memo: JSON.stringify(memoData),
-    movie: JSON.stringify(movieData),
-    list: JSON.stringify(listItems),
-    override: displayOverride,
-    ha: JSON.stringify(haDevices),
-    haScenes: JSON.stringify(haScenes),
-  };
+  const shouldForceCurrentScreen = currentScreenUsesEvent(eventType);
 
-  // Fetch fresh data for the affected type
   try {
     switch (eventType) {
       case 'photos': {
-        const res = await fetch('/api/photos').then(r => r.ok ? r.json() : []);
+        const res = await fetchJsonOrDefault('/api/photos', []);
         photoUrls = res.map(p => `/photos/${p.filename}`);
+        if (shouldForceCurrentScreen) currentPhotoIndex = 0;
         break;
       }
       case 'memo': {
-        const res = await fetch('/api/memo').then(r => r.ok ? r.json() : null).catch(() => null);
-        memoData = res;
+        memoData = await fetchJsonOrDefault('/api/memo', null);
         break;
       }
       case 'movie': {
-        const res = await fetch('/api/movie').then(r => r.ok ? r.json() : null).catch(() => null);
-        movieData = res;
+        movieData = await fetchJsonOrDefault('/api/movie', null);
         break;
       }
       case 'list-items': {
-        const res = await fetch('/api/list-items').then(r => r.ok ? r.json() : []).catch(() => []);
-        listItems = res;
+        listItems = await fetchJsonOrDefault('/api/list-items', []);
         break;
       }
       case 'display-override': {
-        const res = await fetch('/api/display-override').then(r => r.ok ? r.json() : {}).catch(() => ({}));
+        const res = await fetchJsonOrDefault('/api/display-override', {});
         displayOverride = res.screen || null;
         break;
       }
       case 'ha-devices': {
-        const res = await fetch('/api/ha/devices').then(r => r.ok ? r.json() : []).catch(() => []);
-        haDevices = res;
+        haDevices = await fetchJsonOrDefault('/api/ha/devices', []);
         break;
       }
       case 'ha-scenes': {
-        const res = await fetch('/api/ha/scenes').then(r => r.ok ? r.json() : []).catch(() => []);
-        haScenes = res;
+        haScenes = await fetchJsonOrDefault('/api/ha/scenes', []);
         break;
       }
+      default:
+        return;
     }
   } catch (err) {
     console.error('SSE update fetch error:', err);
+    showError();
     return;
   }
 
-  // Check what actually changed and re-render if needed
-  const changed = {
-    photos: JSON.stringify(photoUrls) !== prev.photos,
-    memo: JSON.stringify(memoData) !== prev.memo,
-    movie: JSON.stringify(movieData) !== prev.movie,
-    list: JSON.stringify(listItems) !== prev.list,
-    override: displayOverride !== prev.override,
-    ha: JSON.stringify(haDevices) !== prev.ha,
-    haScenes: JSON.stringify(haScenes) !== prev.haScenes,
-  };
+  if (eventType === 'ha-devices' || eventType === 'ha-scenes') renderDock();
+  if (eventType === 'display-override') scheduleNextDisplayEvent();
 
-  // If override changed, check if we need to switch screens
-  if (changed.override) {
-    const next = getScheduledScreen();
-    const current = currentInterrupt?.type;
-    if (next !== current) {
-      dismissInterrupt();
-      renderScreen(next);
-    }
-    return;
-  }
-
-  // Re-render current interrupt if its data changed
-  if (!currentInterrupt) return;
-
-  switch (currentInterrupt.type) {
-    case 'memo':
-      if (changed.memo && memoData) showMemo(memoData.title, memoData.content);
-      break;
-    case 'photo':
-      if (changed.photos) { currentPhotoIndex = 0; showPhoto(); }
-      break;
-    case 'movie':
-      if (changed.movie) showMovie();
-      break;
-    case 'list':
-      if (changed.list && listItems.length) showList(listItems.map(i => i.text));
-      break;
-    case 'ha':
-      if ((changed.ha || changed.haScenes) && haDevices.length) showHA();
-      break;
-  }
-
-  // Always re-render dock when HA devices or scenes change (dock is always visible)
-  if (changed.ha || changed.haScenes) renderDock();
+  reconcileDisplay({ force: shouldForceCurrentScreen });
 }
 
 // --- Init ---
@@ -1088,8 +1277,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderDock();
 
   document.getElementById('interrupt-dismiss').addEventListener('click', () => {
-    dismissInterrupt();
-    renderScreen('photo');
+    const dismissedType = dismissInterrupt({ markTrashDone: true });
+    renderedScreen = null;
+    if (dismissedType === 'trash') reconcileDisplay({ force: true });
+    else displayScreen('photo', { force: true });
   });
 
   // Photo swipe navigation
@@ -1100,7 +1291,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(updateClock, 1000);
 
   // Fetch live data from backend + weather
-  await Promise.all([fetchDashboardData(), fetchWeather()]);
+  const [dataOk] = await Promise.all([fetchDashboardData(), fetchWeather()]);
 
   // Render dock with actual data
   renderDock();
@@ -1108,90 +1299,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Connect to SSE for real-time updates
   connectSSE();
 
-  // Show scheduled screen
-  showScheduledScreen();
+  // Show scheduled screen and arm the next timed schedule event
+  if (dataOk) showScheduledScreen();
+  lastScheduleSlot = getScheduleSlot();
+  scheduleNextDisplayEvent();
 
-  // Track schedule slot to detect boundary crossings (clears manual override)
-  let lastSlot = getScheduleSlot();
-
-  // Re-check schedule every minute and switch if it changed
+  // Weather is external to the backend, so refresh it separately from SSE.
   setInterval(async () => {
-    const currentSlot = getScheduleSlot();
-
-    // If we crossed into a new time slot, clear any manual override
-    if (displayOverride && currentSlot !== lastSlot) {
-      try {
-        await fetch('/api/display-override', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ screen: null }),
-        });
-        displayOverride = null;
-      } catch (err) {
-        console.error('Failed to clear display override:', err);
-      }
-    }
-    lastSlot = currentSlot;
-
-    const next = getScheduledScreen();
-    const today = new Date().toISOString().slice(0, 10);
-    const effectiveNext = (next === 'trash' && trashDismissedDate === today) ? 'photo' : next;
-    const current = currentInterrupt?.type;
-    if (effectiveNext !== current) {
-      dismissInterrupt();
-      renderScreen(effectiveNext);
-    }
-  }, 60000);
-
-  // Poll for updates every 30s — re-render current screen if data changed
-  setInterval(async () => {
-    const prevMemo = JSON.stringify(memoData);
-    const prevPhotos = JSON.stringify(photoUrls);
-    const prevMovie = JSON.stringify(movieData);
-    const prevList = JSON.stringify(listItems);
-    const prevWeather = JSON.stringify(weatherData);
-    const prevHA = JSON.stringify(haDevices);
-
-    await Promise.all([fetchDashboardData(), fetchWeather()]);
-
-    const memoChanged = JSON.stringify(memoData) !== prevMemo;
-    const photosChanged = JSON.stringify(photoUrls) !== prevPhotos;
-    const movieChanged = JSON.stringify(movieData) !== prevMovie;
-    const listChanged = JSON.stringify(listItems) !== prevList;
-    const weatherChanged = JSON.stringify(weatherData) !== prevWeather;
-    const haChanged = JSON.stringify(haDevices) !== prevHA;
-
-    // Re-render current interrupt if its data changed
-    if (currentInterrupt) {
-      switch (currentInterrupt.type) {
-        case 'error':
-          // Backend reachable again — drop the error screen and resume schedule
-          dismissInterrupt();
-          showScheduledScreen();
-          break;
-        case 'memo':
-          if (memoChanged && memoData) showMemo(memoData.title, memoData.content);
-          break;
-        case 'photo':
-          if (photosChanged) { currentPhotoIndex = 0; showPhoto(); }
-          break;
-        case 'movie':
-          if (movieChanged) showMovie();
-          break;
-        case 'list':
-          if (listChanged && listItems.length) showList(listItems.map(i => i.text));
-          break;
-        case 'weather':
-          if (weatherChanged && weatherData) showWeather(weatherData);
-          break;
-        case 'ha':
-          if (haChanged && haDevices.length) showHA();
-          break;
-      }
-    }
-
-    // Always re-render dock when HA devices change
-    if (haChanged) renderDock();
-  }, 30000);
-
+    await fetchWeather();
+    if (renderedScreen === 'weather') displayScreen('weather', { force: true });
+  }, 15 * 60 * 1000);
 });
