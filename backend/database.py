@@ -10,7 +10,7 @@ from datetime import datetime
 DB_DIR = os.path.join(os.path.dirname(__file__), 'data')
 DB_PATH = os.path.join(DB_DIR, 'skylight.db')
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 CREATE_TABLES_SQL = """
 -- Photos
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS movie (
     rating REAL,
     blurb TEXT NOT NULL DEFAULT '',
     tmdb_id INTEGER,
+    actors TEXT,
     validated INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -73,6 +74,16 @@ CREATE TABLE IF NOT EXISTS ha_devices (
     is_active INTEGER NOT NULL DEFAULT 0,
     is_on INTEGER NOT NULL DEFAULT 0,
     status TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ha_scenes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    icon TEXT NOT NULL DEFAULT 'scene',
+    is_active INTEGER NOT NULL DEFAULT 0,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -119,6 +130,13 @@ def init_db():
     try:
         conn.executescript(CREATE_TABLES_SQL)
         conn.executescript(SEED_DATA_SQL)
+
+        # Migrations
+        conn.execute("ALTER TABLE movie ADD COLUMN actors TEXT")
+
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists (re-run safety)
         conn.commit()
     finally:
         conn.close()

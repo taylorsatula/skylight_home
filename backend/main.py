@@ -126,6 +126,7 @@ class MovieData(BaseModel):
     rating: Optional[float] = None
     blurb: str = ""
     tmdb_id: Optional[int] = None
+    actors: Optional[str] = None
     validated: bool = False
 
 class DisplayOverride(BaseModel):
@@ -459,9 +460,9 @@ async def update_movie(data: MovieData):
         # Store local filename (not remote URL) in DB
         db.execute(
             """UPDATE movie SET title = ?, year = ?, poster_url = ?, rating = ?,
-               blurb = ?, tmdb_id = ?, validated = ?, updated_at = datetime('now')
+               blurb = ?, tmdb_id = ?, actors = ?, validated = ?, updated_at = datetime('now')
                WHERE id = 1""",
-            (data.title, data.year, local_filename, data.rating, data.blurb, data.tmdb_id, 1 if data.validated else 0),
+            (data.title, data.year, local_filename, data.rating, data.blurb, data.tmdb_id, data.actors, 1 if data.validated else 0),
         )
         db.commit()
         asyncio.create_task(broadcast_sse('movie'))
@@ -490,8 +491,25 @@ async def search_movie(query: str = Query(..., min_length=1)):
     if response.status_code != 200:
         raise HTTPException(status_code=502, detail=f"TMDB API error: {response.status_code}")
 
+    # Fetch top cast for each result in parallel
+    async def fetch_cast(tmdb_id):
+        try:
+            r = await client.get(
+                f"https://api.themoviedb.org/3/movie/{tmdb_id}/credits",
+                params={"api_key": TMDB_API_KEY},
+            )
+            if r.status_code == 200:
+                cast = r.json().get("cast", [])[:6]
+                return ", ".join(c["name"] for c in cast)
+        except Exception:
+            pass
+        return None
+
+    raw_results = response.json().get("results", [])[:10]
+    casts = await asyncio.gather(*(fetch_cast(m["id"]) for m in raw_results))
+
     results = []
-    for m in response.json().get("results", [])[:10]:
+    for m, actors in zip(raw_results, casts):
         pp = m.get("poster_path")
         results.append({
             "id": m["id"],
@@ -500,6 +518,7 @@ async def search_movie(query: str = Query(..., min_length=1)):
             "poster_url": f"https://image.tmdb.org/t/p/w500{pp}" if pp else None,
             "rating": m.get("vote_average"),
             "overview": m.get("overview", ""),
+            "actors": actors,
         })
     return {"results": results}
 

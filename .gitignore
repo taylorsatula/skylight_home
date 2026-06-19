@@ -12,6 +12,9 @@ __pycache__/
 *.apk
 *.xapk
 
+# Virtual environment
+backend/.venv/
+
 # Backend data (runtime-generated)
 backend/data/
 

@@ -41,6 +41,19 @@ class HaDeviceUpdate(BaseModel):
 class ReorderRequest(BaseModel):
     order: list[int]
 
+class HaSceneCreate(BaseModel):
+    entity_id: str
+    name: str
+    icon: str = 'scene'
+    is_active: bool = False
+    sort_order: Optional[int] = None
+
+class HaSceneUpdate(BaseModel):
+    name: Optional[str] = None
+    icon: Optional[str] = None
+    is_active: Optional[bool] = None
+    sort_order: Optional[int] = None
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
@@ -246,7 +259,7 @@ async def sync_ha_devices():
         if not all_states:
             raise HTTPException(status_code=502, detail="Failed to reach Home Assistant")
 
-        # Update local states
+        # Update local device states
         devices = db.execute("SELECT id, entity_id FROM ha_devices").fetchall()
         for dev in devices:
             state = all_states.get(dev["entity_id"])
@@ -257,11 +270,29 @@ async def sync_ha_devices():
                     (is_on, state, dev["id"]),
                 )
 
+        # Sync scenes from HA — discover and upsert
+        ha_scene_entities = {k: v for k, v in all_states.items() if k.startswith('scene.')}
+        local_scenes = db.execute("SELECT id, entity_id, name FROM ha_scenes").fetchall()
+        local_scene_map = {s["entity_id"]: s for s in local_scenes}
+
+        for entity_id in ha_scene_entities:
+            if entity_id in local_scene_map:
+                # Update existing scene's favorite status preserved, just keep it current
+                pass
+            else:
+                # New scene discovered — extract a friendly name from entity_id
+                friendly_name = entity_id.replace('scene.', '').replace('_', ' ').title()
+                db.execute(
+                    "INSERT INTO ha_scenes (entity_id, name, icon, is_active, sort_order) VALUES (?, ?, ?, 0, 0)",
+                    (entity_id, friendly_name, 'scene'),
+                )
+
         db.execute(
             "UPDATE ha_config SET last_synced = datetime('now') WHERE id = 1",
         )
         db.commit()
         asyncio.create_task(_emit('ha-devices'))
+        asyncio.create_task(_emit('ha-scenes'))
 
         rows = db.execute("SELECT * FROM ha_devices ORDER BY sort_order ASC").fetchall()
         return [dict(r) for r in rows]
@@ -358,6 +389,112 @@ async def list_ha_entities():
                 "registered": entity_id in registered,
             })
         return result
+    finally:
+        db.close()
+
+# ---------------------------------------------------------------------------
+# Routes — Scenes CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/scenes")
+async def list_ha_scenes():
+    db = get_db()
+    try:
+        rows = db.execute("SELECT * FROM ha_scenes ORDER BY sort_order ASC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+@router.post("/scenes", status_code=201)
+async def create_ha_scene(data: HaSceneCreate):
+    db = get_db()
+    try:
+        cursor = db.execute(
+            "INSERT INTO ha_scenes (entity_id, name, icon, is_active, sort_order) VALUES (?, ?, ?, ?, ?)",
+            (data.entity_id, data.name, data.icon, 1 if data.is_active else 0, data.sort_order or 0),
+        )
+        db.commit()
+        asyncio.create_task(_emit('ha-scenes'))
+        row = db.execute("SELECT * FROM ha_scenes WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return dict(row)
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="Entity ID already exists")
+    finally:
+        db.close()
+
+@router.put("/scenes/{scene_id}")
+async def update_ha_scene(scene_id: int, data: HaSceneUpdate):
+    db = get_db()
+    try:
+        updates, params = [], []
+        if data.name is not None:
+            updates.append("name = ?"); params.append(data.name)
+        if data.icon is not None:
+            updates.append("icon = ?"); params.append(data.icon)
+        if data.is_active is not None:
+            updates.append("is_active = ?"); params.append(1 if data.is_active else 0)
+        if data.sort_order is not None:
+            updates.append("sort_order = ?"); params.append(data.sort_order)
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        params.append(scene_id)
+        db.execute(f"UPDATE ha_scenes SET {', '.join(updates)} WHERE id = ?", params)
+        db.commit()
+        asyncio.create_task(_emit('ha-scenes'))
+        row = db.execute("SELECT * FROM ha_scenes WHERE id = ?", (scene_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Scene not found")
+        return dict(row)
+    finally:
+        db.close()
+
+@router.delete("/scenes/{scene_id}")
+async def delete_ha_scene(scene_id: int):
+    db = get_db()
+    try:
+        db.execute("DELETE FROM ha_scenes WHERE id = ?", (scene_id,))
+        db.commit()
+        asyncio.create_task(_emit('ha-scenes'))
+        return {"deleted": scene_id}
+    finally:
+        db.close()
+
+# NOTE: /reorder must come BEFORE /{scene_id}/activate or FastAPI treats "reorder" as a scene_id
+@router.put("/scenes/reorder")
+async def reorder_ha_scenes(data: ReorderRequest):
+    db = get_db()
+    try:
+        for index, sid in enumerate(data.order):
+            db.execute("UPDATE ha_scenes SET sort_order = ? WHERE id = ?", (index, sid))
+        db.commit()
+        asyncio.create_task(_emit('ha-scenes'))
+        rows = db.execute("SELECT * FROM ha_scenes ORDER BY sort_order ASC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+@router.post("/scenes/{scene_id}/activate")
+async def activate_ha_scene(scene_id: int):
+    """Activate a scene via HA API."""
+    db = get_db()
+    try:
+        scene = db.execute("SELECT * FROM ha_scenes WHERE id = ?", (scene_id,)).fetchone()
+        if not scene:
+            raise HTTPException(status_code=404, detail="Scene not found")
+        scene = dict(scene)
+
+        config = db.execute("SELECT url, api_key FROM ha_config WHERE id = 1").fetchone()
+        if not config or not config["url"] or not config["api_key"]:
+            raise HTTPException(status_code=400, detail="HA connection not configured")
+
+        base_url = config["url"].rstrip('/')
+        api_key = config["api_key"]
+
+        success = await _ha_call_service("scene", "turn_on", scene["entity_id"], base_url, api_key)
+        if not success:
+            raise HTTPException(status_code=502, detail="Failed to activate scene via Home Assistant")
+
+        return {"status": "activated"}
     finally:
         db.close()
 

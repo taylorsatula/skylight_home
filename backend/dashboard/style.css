@@ -372,7 +372,7 @@ body {
 /* ============================================
    PHOTO FRAME
    Full-screen image, calm mode (no .screen wrapper)
-   ============================================
+   ============================================ */
 .photo-frame {
   position: fixed;
   inset: 0;
@@ -391,6 +391,9 @@ body {
    Poster left, info right
    ============================================ */
 .movie-poster {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   gap: 48px;
 }
 
@@ -432,6 +435,12 @@ body {
   font-size: 20px;
   color: var(--color-accent);
   font-weight: 600;
+}
+
+.movie-poster__actors {
+  font-size: 18px;
+  color: var(--text-secondary);
+  font-weight: 400;
 }
 
 .movie-poster__blurb {
@@ -533,8 +542,8 @@ body {
   position: fixed;
   bottom: 24px;
   left: 50%;
-  transform: translateX(-50%);
-  z-index: 200;
+  transform: translateX(-50%) scale(0.8);
+  z-index: 400;
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
@@ -548,9 +557,9 @@ body {
 }
 
 .dock__home-btn {
-  width: 40px;
-  height: 40px;
-  margin-right: var(--spacing-sm);
+  width: 56px;
+  height: 56px;
+  margin: 0 18px;
   border: none;
   border-radius: var(--radius-full);
   background: var(--icon-bg-off);
@@ -570,21 +579,29 @@ body {
 
 .dock__home-btn:active {
   transform: scale(0.92);
+  transition-duration: 0.05s;
 }
 
 .dock__home-btn img {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
   display: block;
 }
 
-.dock__home-btn.is-active {
+.dock__home-btn.is-active,
+.dock__home-btn--launcher-open {
   background: var(--icon-bg-on);
 }
 
-.dock__home-btn.is-active img {
+.dock__home-btn.is-active img,
+.dock__home-btn--launcher-open img {
   filter: invert(1);
+}
+
+.dock__home-btn.is-active:hover,
+.dock__home-btn--launcher-open:hover {
+  background: var(--icon-bg-on);
 }
 
 .dock__separator {
@@ -609,6 +626,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
+  margin: 0 4px;
   padding: var(--spacing-md) var(--spacing-lg);
   border-radius: var(--radius-xl);
   background: var(--surface-tile);
@@ -629,6 +647,7 @@ body {
 .tile:active {
   transform: scale(0.96);
   opacity: 0.8;
+  transition-duration: 0.05s;
 }
 
 .tile * {
@@ -727,6 +746,78 @@ body {
 }
 
 /* ============================================
+   APP LAUNCHER
+   Overlay grid of screen choices
+   ============================================ */
+.app-launcher {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-launcher--active {
+  display: flex;
+}
+
+.app-launcher__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 90px;
+  padding: var(--spacing-2xl);
+}
+
+.app-launcher__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  transition: opacity 0.15s ease;
+}
+
+.app-launcher__item:hover {
+  opacity: 0.7;
+}
+
+.app-launcher__item:active {
+  opacity: 0.5;
+}
+
+.app-launcher__icon {
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-launcher__icon img {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  display: block;
+  filter: brightness(0) invert(1);
+}
+
+.app-launcher__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  text-align: center;
+}
+
+/* ============================================
    INTERRUPT: WEATHER
    Big, centered, hourly temp bar
    ============================================ */
@@ -734,18 +825,18 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-xl);
+  gap: var(--spacing-2xl);
 }
 
 .weather-interrupt__header {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xl);
+  gap: var(--spacing-2xl);
 }
 
 .weather-interrupt__icon {
-  width: 72px;
-  height: 72px;
+  width: 120px;
+  height: 120px;
   color: var(--color-warning);
 }
 
@@ -764,37 +855,37 @@ body {
 .weather-interrupt__temp-group {
   display: flex;
   align-items: flex-start;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
 }
 
 .weather-interrupt__temp {
-  font-size: 96px;
+  font-size: 160px;
   font-weight: 200;
   line-height: 1;
-  letter-spacing: -4px;
+  letter-spacing: -6px;
 }
 
 .weather-interrupt__unit {
-  font-size: 28px;
+  font-size: 42px;
   font-weight: 300;
   color: var(--text-secondary);
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 .weather-interrupt__info {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
   text-align: left;
 }
 
 .weather-interrupt__condition {
-  font-size: 24px;
+  font-size: 36px;
   font-weight: 500;
 }
 
 .weather-interrupt__range {
-  font-size: 18px;
+  font-size: 28px;
   color: var(--text-secondary);
 }
 
@@ -804,7 +895,7 @@ body {
 }
 
 .weather-interrupt__feels-like {
-  font-size: 15px;
+  font-size: 22px;
   color: var(--text-muted);
 }
 
@@ -812,15 +903,15 @@ body {
 .weather-interrupt__hourly {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: var(--spacing-lg);
   width: 100%;
-  max-width: 500px;
+  max-width: 700px;
 }
 
 .weather-interrupt__hourly-label {
-  font-size: 13px;
+  font-size: 20px;
   color: var(--text-muted);
-  width: 28px;
+  width: 40px;
   text-align: right;
   flex-shrink: 0;
 }
@@ -832,9 +923,9 @@ body {
 
 .weather-interrupt__bar-track {
   flex: 1;
-  height: 10px;
+  height: 14px;
   background: rgba(255, 255, 255, 0.12);
-  border-radius: 5px;
+  border-radius: 7px;
   position: relative;
   overflow: hidden;
 }
@@ -842,15 +933,15 @@ body {
 .weather-interrupt__bar-fill {
   position: absolute;
   inset: 0;
-  border-radius: 5px;
+  border-radius: 7px;
   background: linear-gradient(90deg, #30d158 0%, #5ac8fa 35%, #ffd60a 65%, #ff9f0a 100%);
 }
 
 .weather-interrupt__bar-now {
   position: absolute;
-  top: -2px;
-  bottom: -2px;
-  width: 3px;
+  top: -3px;
+  bottom: -3px;
+  width: 4px;
   background: #fff;
   border-radius: 2px;
   transform: translateX(-50%);
@@ -858,15 +949,34 @@ body {
 }
 
 .weather-interrupt__hourly-value {
-  font-size: 13px;
+  font-size: 20px;
   color: var(--text-secondary);
-  width: 32px;
+  width: 44px;
   flex-shrink: 0;
 }
 
 .weather-interrupt__hourly-value--now {
   color: var(--text-primary);
   font-weight: 600;
+}
+
+/* ============================================
+   SCREEN EDIT BUTTON
+   Discreet edit button at bottom of list/memo screens
+   ============================================ */
+.screen-edit-pill {
+  position: absolute;
+  bottom: 130px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+  z-index: 10;
 }
 
 /* ============================================
@@ -894,6 +1004,12 @@ body {
    ============================================ */
 .ha-screen {
   gap: var(--spacing-xl);
+  max-height: calc(100vh - 420px);
+  overflow-y: auto;
+}
+
+.ha-screen::-webkit-scrollbar {
+  display: none;
 }
 
 .ha-screen__scenes,

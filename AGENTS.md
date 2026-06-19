@@ -12,24 +12,23 @@ time-based schedule, with content stored in SQLite and pushed to the display via
 - **Env:** `PORT=8894`, `TMDB_API_KEY` (movie search only).
 - **Setup:** `bash backend/setup.sh` (venv + deps + systemd install), then
   `sudo systemctl start skylight-backend`.
-- The dashboard frontend files are served by the backend from `backend/dashboard/`.
-  The root `app.js`/`index.html`/`style.css` are the **source of truth** and must be kept
-  identical to `backend/dashboard/*`.
+- The dashboard frontend files live in `backend/dashboard/` and are served directly
+  by the backend.
 
 ## Architecture
 
 **Two frontends + one API, single origin (port 8894):**
 
-1. **Dashboard** (`app.js`, served at `/`) — the calm screen. Single-file vanilla JS.
-   No framework, no config file, no build step. `CONFIG` (dock devices) and `SCHEDULE`
-   are hardcoded constants in `app.js`.
+1. **Dashboard** (`backend/dashboard/app.js`, served at `/`) — the calm screen. Single-file
+   vanilla JS. No framework, no config file, no build step. `CONFIG` (dock devices) and
+   `SCHEDULE` are hardcoded constants in `app.js`.
 2. **Admin PWA** (`backend/static/`, served at `/admin`) — phone UI to manage photos,
    memo, list, movie, and display override. Vanilla JS PWA with service worker.
 3. **Backend API** (`backend/main.py`) — FastAPI + SQLite (`backend/database.py`),
    REST endpoints + an SSE stream (`/api/events`) that broadcasts on every mutation so
    the dashboard updates in real time.
 
-**Schedule model** (`app.js` `SCHEDULE`): an ordered array of rules
+**Schedule model** (`backend/dashboard/app.js` `SCHEDULE`): an ordered array of rules
 `{ type, days?, start, end }`. Evaluated top-to-bottom each minute, first match wins,
 default is the photo frame. A manual admin `display_override` takes precedence and is
 auto-cleared when the schedule crosses into a new 30-min slot.
@@ -49,14 +48,13 @@ then maintains a persistent `EventSource('/api/events')` for incremental updates
 ## File map
 
 ```
-app.js, index.html, style.css        # Dashboard (source of truth; mirrored to backend/dashboard/)
-backend/main.py                       # FastAPI app — API + SSE + serves / and /admin
+backend/main.py                               # FastAPI app — API + SSE + serves / and /admin
 backend/database.py                    # SQLite schema, seed data, get_db()/init_db()
 backend/requirements.txt               # fastapi, uvicorn, httpx, python-multipart
 backend/setup.sh                       # Pi setup (venv, deps, systemd unit)
 backend/skylight-backend.service       # systemd unit (server_admin, port 8894)
 backend/data/                          # Runtime DB + photos + posters (gitignored)
-backend/dashboard/{app.js,index.html,style.css}  # Served copy of the dashboard
+backend/dashboard/{app.js,index.html,style.css}  # Dashboard (source of truth)
 backend/dashboard/{photoframe_images,scratchpics,weather-icons}/  # Static image assets
 backend/static/{app.js,index.html,style.css,sw.js,manifest.json}  # Admin PWA
 backend/static/icons/                  # PWA icons
@@ -84,7 +82,7 @@ REST endpoints (all mutating ones call `broadcast_sse(type)`):
 row factory. Tables: `photos`, `memo`, `list_items`, `movie`, `settings`.
 `init_db()` is idempotent (CREATE IF NOT EXISTS + INSERT OR IGNORE seed rows).
 
-## Dashboard coding guide (`app.js`)
+## Dashboard coding guide (`backend/dashboard/app.js`)
 
 Structure (top-to-bottom): `CONFIG` → `SCHEDULE` → schedule/screen selection →
 data fetch → weather (Open-Meteo WMO codes + icon map) → interrupt system →

@@ -20,6 +20,7 @@ let state = {
   displayOverride: null,
   haConfig: null,
   haDevices: [],
+  haScenes: [],
 };
 
 let dragState = { dragging: false, sourceId: null };
@@ -43,6 +44,7 @@ async function init() {
     fetchDisplayOverride(),
     fetchHaConfig(),
     fetchHaDevices(),
+    fetchHaScenes(),
   ]);
   renderGallery();
   renderMemo();
@@ -161,6 +163,8 @@ function renderGallery() {
 }
 
 function setupGalleryInteractions() {
+  const grid = document.getElementById('gallery-grid');
+
   // Delete buttons
   document.querySelectorAll('.gallery-item__delete').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -674,7 +678,7 @@ function renderMovie() {
   const titleInput = document.getElementById('movie-title');
   const yearInput = document.getElementById('movie-year');
   const posterUrlInput = document.getElementById('movie-poster-url');
-  const ratingInput = document.getElementById('movie-rating');
+  const actorsInput = document.getElementById('movie-actors');
   const blurbInput = document.getElementById('movie-blurb');
   const posterImg = document.getElementById('movie-poster-img');
   const posterPlaceholder = document.getElementById('movie-poster-placeholder');
@@ -682,7 +686,7 @@ function renderMovie() {
   titleInput.value = state.movie.title;
   yearInput.value = state.movie.year ?? '';
   posterUrlInput.value = state.movie.poster_url ?? '';
-  ratingInput.value = state.movie.rating ?? '';
+  actorsInput.value = state.movie.actors ?? '';
   blurbInput.value = state.movie.blurb;
 
   updatePosterPreview(state.movie.poster_url);
@@ -740,7 +744,7 @@ async function searchMovie() {
         }
         <div class="search-result-item__info">
           <div class="search-result-item__title">${escapeHtml(movie.title)}</div>
-          <div class="search-result-item__year">${movie.year || 'N/A'}${movie.rating ? ` · ★ ${movie.rating.toFixed(1)}` : ''}</div>
+          <div class="search-result-item__year">${movie.year || 'N/A'}${movie.actors ? ` · ${movie.actors}` : ''}</div>
         </div>
       </div>
     `).join('');
@@ -764,7 +768,7 @@ function selectMovieResult(movie) {
   document.getElementById('movie-title').value = movie.title;
   document.getElementById('movie-year').value = movie.year ?? '';
   document.getElementById('movie-poster-url').value = movie.poster_url ?? '';
-  document.getElementById('movie-rating').value = movie.rating ?? '';
+  document.getElementById('movie-actors').value = movie.actors ?? '';
   document.getElementById('movie-blurb').value = movie.overview;
 
   updatePosterPreview(movie.poster_url);
@@ -775,7 +779,7 @@ function selectMovieResult(movie) {
     title: movie.title,
     year: movie.year,
     poster_url: movie.poster_url,
-    rating: movie.rating,
+    actors: movie.actors,
     blurb: movie.overview,
     validated: true,
   };
@@ -796,7 +800,7 @@ document.getElementById('movie-save-btn')?.addEventListener('click', async () =>
   const title = document.getElementById('movie-title').value.trim();
   const year = document.getElementById('movie-year').value ? parseInt(document.getElementById('movie-year').value) : null;
   const posterUrl = document.getElementById('movie-poster-url').value.trim() || null;
-  const rating = document.getElementById('movie-rating').value ? parseFloat(document.getElementById('movie-rating').value) : null;
+  const actors = document.getElementById('movie-actors').value.trim() || null;
   const blurb = document.getElementById('movie-blurb').value;
 
   if (!title) {
@@ -812,7 +816,7 @@ document.getElementById('movie-save-btn')?.addEventListener('click', async () =>
       title,
       year: year ?? validatedMovieData.year,
       poster_url: posterUrl ?? validatedMovieData.poster_url,
-      rating: rating ?? validatedMovieData.rating,
+      actors: actors ?? validatedMovieData.actors,
       blurb: blurb || validatedMovieData.blurb,
       tmdb_id: validatedMovieData.tmdb_id,
       validated: true,
@@ -823,7 +827,7 @@ document.getElementById('movie-save-btn')?.addEventListener('click', async () =>
   // If user pressed Save again after seeing the warning, force save
   if (forceSaveMovie) {
     await saveMovieToDb({
-      title, year, poster_url: posterUrl, rating, blurb,
+      title, year, poster_url: posterUrl, actors, blurb,
       tmdb_id: null, validated: false,
     });
     return;
@@ -849,7 +853,7 @@ document.getElementById('movie-save-btn')?.addEventListener('click', async () =>
           title: match.title,
           year: match.year,
           poster_url: match.poster_url,
-          rating: match.rating,
+          actors: match.actors,
           blurb: match.overview,
           validated: true,
         };
@@ -870,7 +874,7 @@ document.getElementById('movie-save-btn')?.addEventListener('click', async () =>
 
   // If nothing else, just save what's there
   await saveMovieToDb({
-    title, year, poster_url: posterUrl, rating, blurb,
+    title, year, poster_url: posterUrl, actors, blurb,
     tmdb_id: null, validated: false,
   });
 });
@@ -1052,28 +1056,34 @@ async function toggleDeviceFavorite(id) {
   }
 }
 
-// --- Scenes (hardcoded, matches dashboard) ---
-const HA_SCENES = [
-  { id: 'scene.good_morning', name: 'Good Morning', icon: 'sun', is_active: false },
-  { id: 'scene.movie_night', name: 'Movie Night', icon: 'switch', is_active: false },
-  { id: 'scene.away', name: 'Away', icon: 'lock', is_active: false },
-];
+async function fetchHaScenes() {
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/scenes`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.haScenes = await res.json();
+  } catch (e) { console.error('Fetch HA scenes error:', e); }
+}
 
 function renderHaScenes() {
   const container = document.getElementById('ha-scenes-list');
   if (!container) return;
 
-  container.innerHTML = HA_SCENES.map(scene => `
+  if (!state.haScenes.length) {
+    container.innerHTML = '<p class="empty-state">No scenes configured yet.</p>';
+    return;
+  }
+
+  container.innerHTML = state.haScenes.map(scene => `
     <div class="ha-device-card">
       <div class="ha-device-card__header">
         <span class="ha-device-card__name">${escapeHtml(scene.name)}</span>
-        <span class="ha-device-card__entity">${escapeHtml(scene.id)}</span>
+        <span class="ha-device-card__entity">${escapeHtml(scene.entity_id)}</span>
       </div>
       <div class="ha-device-card__body">
         ${scene.is_active ? '<span class="ha-device-card__badge">Dock</span>' : ''}
       </div>
       <div class="ha-device-card__actions">
-        <button class="ha-device-card__action-btn" onclick="toggleSceneActive('${scene.id}')" aria-label="Toggle dock">
+        <button class="ha-device-card__action-btn" onclick="toggleSceneFavorite(${scene.id})" aria-label="Toggle dock">
           <svg class="icon icon--sm" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="${scene.is_active ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
@@ -1081,11 +1091,23 @@ function renderHaScenes() {
   `).join('');
 }
 
-function toggleSceneActive(id) {
-  const scene = HA_SCENES.find(s => s.id === id);
+async function toggleSceneFavorite(sceneId) {
+  const scene = state.haScenes.find(s => s.id === sceneId);
   if (!scene) return;
-  scene.is_active = !scene.is_active;
-  renderHaScenes();
+  try {
+    const res = await fetch(`${API_BASE}/api/ha/scenes/${sceneId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: !scene.is_active }),
+    });
+    if (!res.ok) throw new Error('Update failed');
+    await fetchHaScenes();
+    renderHaScenes();
+    showToast('Scene updated');
+  } catch (err) {
+    console.error('Toggle scene favorite error:', err);
+    showToast('Update failed');
+  }
 }
 
 function setupHaDeviceInteractions() {
@@ -1198,6 +1220,8 @@ async function addHaDevice() {
     showToast(err.message.includes('already exists') ? 'Entity already added' : 'Failed to add device');
   }
 }
+
+
 
 // Discover entities from HA
 async function discoverHaEntities() {

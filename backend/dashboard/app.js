@@ -14,11 +14,7 @@ let listItems = [];
 let weatherData = null;
 let displayOverride = null;  // Manual override from admin; cleared on schedule change
 let haDevices = [];           // Home Assistant devices (dock + HA screen)
-let haScenes = [
-  { id: 'scene.good_morning', name: 'Good Morning', icon: 'sun', is_active: false },
-  { id: 'scene.movie_night', name: 'Movie Night', icon: 'switch', is_active: false },
-  { id: 'scene.away', name: 'Away', icon: 'lock', is_active: false },
-];
+let haScenes = [];            // Home Assistant scenes (fetched from backend)
 
 // --- Schedule ---
 // Rules evaluated top-to-bottom; first match wins. Default: photo.
@@ -100,13 +96,14 @@ function showScheduledScreen() {
 
 async function fetchDashboardData() {
   try {
-    const [photosRes, movieRes, memoRes, listRes, overrideRes, haRes] = await Promise.all([
+    const [photosRes, movieRes, memoRes, listRes, overrideRes, devicesRes, scenesRes] = await Promise.all([
       fetch('/api/photos').then(r => r.ok ? r.json() : []).catch(() => []),
       fetch('/api/movie').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/memo').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/list-items').then(r => r.ok ? r.json() : []).catch(() => []),
       fetch('/api/display-override').then(r => r.ok ? r.json() : {}).catch(() => ({})),
       fetch('/api/ha/devices').then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch('/api/ha/scenes').then(r => r.ok ? r.json() : []).catch(() => []),
     ]);
 
     photoUrls = photosRes.map(p => `/photos/${p.filename}`);
@@ -114,7 +111,8 @@ async function fetchDashboardData() {
     memoData = memoRes;
     listItems = listRes;
     displayOverride = overrideRes.screen || null;
-    haDevices = haRes;
+    haDevices = devicesRes;
+    haScenes = scenesRes;
   } catch (err) {
     console.error('Failed to fetch dashboard data:', err);
     showError();
@@ -311,31 +309,169 @@ function getSceneIconSrc(isActive) {
   return { src: ICON.scene, isOn: isActive };
 }
 
+// --- App Launcher ---
+const LAUNCHER_APPS = [
+  { id: null, label: 'Auto', icon: '/device-icons/auto.png' },
+  { id: 'photo', label: 'Photos', icon: '/device-icons/photos.png' },
+  { id: 'weather', label: 'Weather', icon: '/device-icons/weather.png' },
+  { id: 'memo', label: 'Memo', icon: '/device-icons/memo.png' },
+  { id: 'list', label: 'List', icon: '/device-icons/list.png' },
+  { id: 'movie', label: 'Movie', icon: '/device-icons/movie.png' },
+  { id: 'ha', label: 'Home', icon: '/device-icons/home.png' },
+];
+
+let launcherOpen = false;
+
+function createAppLauncher() {
+  const overlay = document.createElement('div');
+  overlay.className = 'app-launcher';
+  overlay.id = 'app-launcher';
+
+  const grid = document.createElement('div');
+  grid.className = 'app-launcher__grid';
+
+  LAUNCHER_APPS.forEach(app => {
+    const item = document.createElement('button');
+    item.className = 'app-launcher__item';
+    item.setAttribute('aria-label', `Show ${app.label}`);
+    item.innerHTML = `
+      <div class="app-launcher__icon"><img src="${app.icon}" alt="" /></div>
+      <span class="app-launcher__label">${app.label}</span>
+    `;
+    item.addEventListener('click', async () => {
+      const screenValue = app.id; // null for auto
+      try {
+        await fetch('/api/display-override', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ screen: screenValue }),
+        });
+        displayOverride = screenValue;
+      } catch (err) {
+        console.error('Failed to set display override:', err);
+      }
+      closeAppLauncher();
+    });
+    grid.appendChild(item);
+  });
+
+  overlay.appendChild(grid);
+
+  // Click outside grid closes the launcher
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeAppLauncher();
+  });
+
+  document.body.appendChild(overlay);
+}
+
+function openAppLauncher() {
+  const dock = document.getElementById('dock');
+  const btn = document.getElementById('dock-home-btn');
+  btn.classList.add('dock__home-btn--launcher-open');
+  const img = btn.querySelector('img');
+  if (img) img.src = '/device-icons/dock_close.png';
+  document.getElementById('app-launcher').classList.add('app-launcher--active');
+  launcherOpen = true;
+}
+
+function closeAppLauncher() {
+  const dock = document.getElementById('dock');
+  const btn = document.getElementById('dock-home-btn');
+  btn.classList.remove('dock__home-btn--launcher-open');
+  const img = btn.querySelector('img');
+  if (img) img.src = '/device-icons/dock_open.png';
+  document.getElementById('app-launcher').classList.remove('app-launcher--active');
+  launcherOpen = false;
+}
+
 // --- Dock ---
+function createHomeButton() {
+  const btn = document.createElement('button');
+  btn.className = 'dock__home-btn';
+  btn.id = 'dock-home-btn';
+  btn.setAttribute('aria-label', 'Toggle app launcher');
+  btn.innerHTML = '<img src="/device-icons/dock_open.png" alt="Launch" />';
+  btn.addEventListener('click', () => {
+    if (launcherOpen) {
+      closeAppLauncher();
+    } else {
+      openAppLauncher();
+    }
+  });
+  return btn;
+}
+
+function createTile(device) {
+  const tile = document.createElement('div');
+  const isOn = !!device.is_on;
+  const isActive = !!device.is_active;
+  const { src: iconSrc, isOn: iconIsOn } = getDeviceIconSrc(device);
+  tile.className = `tile${isActive ? ' tile--active' : ''}${iconIsOn ? ' tile--on' : ''}`;
+  tile.dataset.haDeviceId = device.id;
+  tile.dataset.deviceType = device.device_type || 'switch';
+  tile.setAttribute('role', 'button');
+  tile.setAttribute('aria-label', `${device.name}: ${isOn ? 'on' : 'off'}. Tap to toggle.`);
+  const displayName = device.name.length > 20 ? device.name.slice(0, 20) + '…' : device.name;
+  tile.innerHTML = `
+    <div class="tile__icon"><img src="${iconSrc}" alt="" /></div>
+    <div class="tile__content">
+      <span class="tile__name">${displayName}</span>
+    </div>
+  `;
+  tile.addEventListener('click', () => toggleHaDevice(device.id));
+  return tile;
+}
+
+function createSceneTile(scene) {
+  const tile = document.createElement('div');
+  const isActive = !!scene.is_active;
+  const { src: iconSrc } = getSceneIconSrc(isActive);
+  tile.className = `tile${isActive ? ' tile--active' : ''}`;
+  tile.dataset.haSceneId = scene.id;
+  tile.setAttribute('role', 'button');
+  tile.setAttribute('aria-label', `Activate ${scene.name}`);
+  const displayName = scene.name.length > 20 ? scene.name.slice(0, 20) + '…' : scene.name;
+  tile.innerHTML = `
+    <div class="tile__icon"><img src="${iconSrc}" alt="" /></div>
+    <div class="tile__content">
+      <span class="tile__name">${displayName}</span>
+    </div>
+  `;
+  tile.addEventListener('click', () => activateHaScene(scene.id));
+  return tile;
+}
+
 function renderDock() {
   const dock = document.getElementById('dock');
-  dock.querySelectorAll('.tile').forEach(t => t.remove());
+  dock.innerHTML = '';
 
-  haDevices.filter(d => d.is_active).forEach(device => {
-    const tile = document.createElement('div');
-    const isOn = !!device.is_on;
-    const isActive = !!device.is_active;
-    const { src: iconSrc, isOn: iconIsOn } = getDeviceIconSrc(device);
-    tile.className = `tile${isActive ? ' tile--active' : ''}${iconIsOn ? ' tile--on' : ''}`;
-    tile.dataset.haDeviceId = device.id;
-    tile.dataset.deviceType = device.device_type || 'switch';
-    tile.setAttribute('role', 'button');
-    tile.setAttribute('aria-label', `${device.name}: ${isOn ? 'on' : 'off'}. Tap to toggle.`);
-    const displayName = device.name.length > 20 ? device.name.slice(0, 20) + '…' : device.name;
-    tile.innerHTML = `
-      <div class="tile__icon"><img src="${iconSrc}" alt="" /></div>
-      <div class="tile__content">
-        <span class="tile__name">${displayName}</span>
-      </div>
-    `;
-    tile.addEventListener('click', () => toggleHaDevice(device.id));
-    dock.appendChild(tile);
-  });
+  const favDevices = haDevices.filter(d => d.is_active);
+  const favScenes = haScenes.filter(s => s.is_active);
+  const totalFavorites = favDevices.length + favScenes.length;
+  const isEven = totalFavorites % 2 === 0;
+
+  if (isEven && totalFavorites > 0) {
+    // Even: [tiles…][home][tiles…]
+    // Split devices evenly, then add scenes after
+    const halfDevices = Math.ceil(favDevices.length / 2);
+    for (let i = 0; i < halfDevices; i++) {
+      dock.appendChild(createTile(favDevices[i]));
+    }
+    dock.appendChild(createHomeButton());
+    for (let i = halfDevices; i < favDevices.length; i++) {
+      dock.appendChild(createTile(favDevices[i]));
+    }
+    favScenes.forEach(scene => dock.appendChild(createSceneTile(scene)));
+  } else {
+    // Odd (or zero): [home][sep][tiles…]
+    dock.appendChild(createHomeButton());
+    const sep = document.createElement('div');
+    sep.className = 'dock__separator';
+    dock.appendChild(sep);
+    favDevices.forEach(device => dock.appendChild(createTile(device)));
+    favScenes.forEach(scene => dock.appendChild(createSceneTile(scene)));
+  }
 }
 
 async function toggleHaDevice(deviceId) {
@@ -634,6 +770,7 @@ function showList(items) {
       <div class="list">
         <ul class="list__items">${listHTML}</ul>
       </div>
+      <span class="screen-edit-pill">edit in the admin panel on your phone</span>
     </div>
   `;
 
@@ -652,6 +789,7 @@ function showMemo(title, text) {
         <h2 class="memo__title">${title}</h2>
         <p class="memo__text">${text}</p>
       </div>
+      <span class="screen-edit-pill">edit in the admin panel on your phone</span>
     </div>
   `;
 
@@ -694,7 +832,7 @@ function showMovie(movieIndex = 0) {
         <div class="movie-poster__info">
           <h2 class="movie-poster__title">${movie.title}</h2>
           ${movie.year ? `<span class="movie-poster__year">${movie.year}</span>` : ''}
-          ${movie.rating ? `<span class="movie-poster__rating">★ ${movie.rating.toFixed(1)}</span>` : ''}
+          ${movie.actors ? `<span class="movie-poster__actors">${movie.actors}</span>` : ''}
           <p class="movie-poster__blurb">${movie.blurb}</p>
         </div>
       </div>
@@ -737,7 +875,7 @@ function showHA() {
   }).join('');
 
   content.innerHTML = `
-    <div class="screen screen--scroll">
+    <div class="screen">
       <div class="ha-screen">
         <div class="ha-screen__scenes">${scenesHTML}</div>
         <hr class="ha-screen__divider" />
@@ -808,6 +946,7 @@ async function handleSSEUpdate(eventType) {
     list: JSON.stringify(listItems),
     override: displayOverride,
     ha: JSON.stringify(haDevices),
+    haScenes: JSON.stringify(haScenes),
   };
 
   // Fetch fresh data for the affected type
@@ -843,6 +982,11 @@ async function handleSSEUpdate(eventType) {
         haDevices = res;
         break;
       }
+      case 'ha-scenes': {
+        const res = await fetch('/api/ha/scenes').then(r => r.ok ? r.json() : []).catch(() => []);
+        haScenes = res;
+        break;
+      }
     }
   } catch (err) {
     console.error('SSE update fetch error:', err);
@@ -857,6 +1001,7 @@ async function handleSSEUpdate(eventType) {
     list: JSON.stringify(listItems) !== prev.list,
     override: displayOverride !== prev.override,
     ha: JSON.stringify(haDevices) !== prev.ha,
+    haScenes: JSON.stringify(haScenes) !== prev.haScenes,
   };
 
   // If override changed, check if we need to switch screens
@@ -887,39 +1032,23 @@ async function handleSSEUpdate(eventType) {
       if (changed.list && listItems.length) showList(listItems.map(i => i.text));
       break;
     case 'ha':
-      if (changed.ha && haDevices.length) showHA();
+      if ((changed.ha || changed.haScenes) && haDevices.length) showHA();
       break;
   }
 
-  // Always re-render dock when HA devices change (dock is always visible)
-  if (changed.ha) renderDock();
+  // Always re-render dock when HA devices or scenes change (dock is always visible)
+  if (changed.ha || changed.haScenes) renderDock();
 }
 
 // --- Init ---
 document.addEventListener('DOMContentLoaded', async () => {
+  createAppLauncher();
   renderDock();
 
   document.getElementById('interrupt-dismiss').addEventListener('click', () => {
     dismissInterrupt();
     renderScreen('photo');
   });
-
-  // Dock home button — toggle HA screen
-  const homeBtn = document.getElementById('dock-home-btn');
-  let prevScreenType = 'photo';
-  if (homeBtn) {
-    homeBtn.addEventListener('click', () => {
-      if (currentInterrupt?.type === 'ha') {
-        dismissInterrupt();
-        renderScreen(prevScreenType);
-        homeBtn.classList.remove('is-active');
-      } else {
-        prevScreenType = currentInterrupt?.type || 'photo';
-        showHA();
-        homeBtn.classList.add('is-active');
-      }
-    });
-  }
 
   // Photo swipe navigation
   initPhotoSwipeListeners();
