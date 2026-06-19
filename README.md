@@ -1,5 +1,7 @@
 # Skylight Home
 
+![Skylight Home Dashboard](ui_screenshot.png)
+
 A calm-screen dashboard for a rooted Skylight Calendar, driven by a schedule and
 managed from a phone via a companion admin PWA. The screen shows exactly one thing at a
 time — a photo, the weather, a memo, a checklist, a movie poster, or a trash-night
