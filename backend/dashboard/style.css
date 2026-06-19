@@ -301,6 +301,135 @@ body {
 }
 
 /* ============================================
+   ALERT OVERLAY
+   Fullscreen alerts (trash night, calendar) — sits above screens,
+   independent from the interrupt so dismissing doesn't affect navigation.
+   ============================================ */
+.alert-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.alert-overlay--active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.alert-overlay__content {
+  text-align: center;
+  max-width: 600px;
+  padding: var(--spacing-2xl);
+}
+
+.alert-overlay__icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto var(--spacing-xl);
+  color: var(--fullscreen-alert-icon-color, var(--color-error));
+}
+
+.alert-overlay__icon .icon {
+  width: 100%;
+  height: 100%;
+}
+
+.alert-overlay__title {
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin-bottom: var(--spacing-md);
+}
+
+.alert-overlay__message {
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.alert-overlay__meta {
+  font-size: 15px;
+  color: var(--text-muted);
+  margin-top: var(--spacing-lg);
+}
+
+.alert-overlay__dismiss {
+  position: fixed;
+  top: 60px;
+  right: 60px;
+  z-index: 210;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  border: none;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.alert-overlay__dismiss-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-error);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alert-overlay--active .alert-overlay__dismiss {
+  opacity: 1;
+  visibility: visible;
+}
+
+.alert-overlay--no-dismiss .alert-overlay__dismiss {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
+.alert-overlay__dismiss:active {
+  opacity: 0.7;
+}
+
+/* Urgent alerts: harsh flash on the close X — body and border flash out of phase */
+@keyframes alert-dismiss-flash-body {
+  0%, 45%  { background-color: rgba(255, 69, 58, 1);   }
+  50%, 95% { background-color: rgba(255, 69, 58, 0.5); }
+  100%     { background-color: rgba(255, 69, 58, 1);   }
+}
+
+@keyframes alert-dismiss-flash-border {
+  0%, 45%  { border-color: rgba(255, 69, 58, 0.5); }
+  50%, 95% { border-color: rgba(255, 69, 58, 1);   }
+  100%     { border-color: rgba(255, 69, 58, 0.5); }
+}
+
+.alert-overlay--urgent .alert-overlay__dismiss {
+  border: 2px solid;
+  animation: alert-dismiss-flash-border 3s steps(1) infinite;
+}
+
+.alert-overlay--urgent .alert-overlay__dismiss-inner {
+  animation: alert-dismiss-flash-body 3s steps(1) infinite;
+}
+
+/* ============================================
    COUNTDOWN BAR
    Vertical progress bar, right edge
    ============================================ */

@@ -24,7 +24,7 @@ const SCHEDULE = [
   // Morning weather — every day 7:00–9:30
   { type: 'weather', start: '07:00', end: '09:30' },
   // Tuesday trash night — Tue 5:00pm–midnight
-  { type: 'trash', days: [5], start: '00:00', end: '01:00' },
+  { type: 'trash', days: [2], start: '17:00', end: '23:59' },
   // Wednesday movie night — Wed 7:30pm–11:00pm
   { type: 'movie', days: [3], start: '19:30', end: '23:00' },
   // Thursday movie night — Thu 5:00pm–11:00pm
@@ -52,9 +52,10 @@ function getScheduledScreen(now = new Date()) {
 }
 
 function getRequestedScreen() {
-  // Schedule-driven alerts (e.g. trash) always break through a manual override.
+  // Schedule-driven alerts (e.g. trash) break through a manual override,
+  // but only if they haven't been dismissed for today.
   const scheduled = getScheduledScreen();
-  if (scheduled === 'trash') return scheduled;
+  if (scheduled === 'trash' && trashDismissedDate !== getLocalDateKey()) return scheduled;
   return displayOverride || scheduled;
 }
 
@@ -119,7 +120,17 @@ function displayScreen(screen, { force = false } = {}) {
 }
 
 function reconcileDisplay({ force = false } = {}) {
-  displayScreen(getEffectiveScreen(), { force });
+  const effective = getEffectiveScreen();
+
+  // Trash is an overlay, not a screen — don't run it through displayScreen().
+  if (effective === 'trash') {
+    if (!currentAlert) new TrashNightAlert().show();
+    return;
+  }
+
+  // If trash alert is showing but no longer scheduled, dismiss it and render the screen.
+  if (currentAlert?.type === 'trash') dismissAlert();
+  displayScreen(effective, { force: true });
 }
 
 function showScheduledScreen() {
@@ -302,7 +313,8 @@ function showEmptyState(type) {
 }
 
 // --- State ---
-let currentInterrupt = null;
+let currentAlert = null;       // Active alert (trash night, calendar)
+let currentInterrupt = null;   // Active screen interrupt (photo, weather, memo…)
 let renderedScreen = null;
 let photoTimer = null;
 let photoCountdownInterval = null;
@@ -618,24 +630,24 @@ class FullscreenAlert {
   }
 
   show() {
-    currentInterrupt = this.state;
+    currentAlert = this.state;
 
-    const el = document.getElementById('interrupt');
-    const content = document.getElementById('interrupt-content');
+    const el = document.getElementById('alert-overlay');
+    const content = document.getElementById('alert-overlay-content');
     const border = document.querySelector('.attention-border');
 
     content.innerHTML = `
-      ${this.icon ? `<div class="interrupt__icon">${this.icon}</div>` : ''}
-      <div class="interrupt__title">${this.title}</div>
-      ${this.message ? `<div class="interrupt__message">${this.message}</div>` : ''}
-      ${this.meta ? `<div class="interrupt__meta">${this.meta}</div>` : ''}
+      ${this.icon ? `<div class="alert-overlay__icon">${this.icon}</div>` : ''}
+      <div class="alert-overlay__title">${this.title}</div>
+      ${this.message ? `<div class="alert-overlay__message">${this.message}</div>` : ''}
+      ${this.meta ? `<div class="alert-overlay__meta">${this.meta}</div>` : ''}
     `;
 
     el.style.removeProperty('--fullscreen-alert-icon-color');
     if (this.iconColor) el.style.setProperty('--fullscreen-alert-icon-color', this.iconColor);
 
-    el.classList.add('interrupt--active', 'interrupt--' + this.priority);
-    el.classList.toggle('interrupt--no-dismiss', !this.dismissible);
+    el.classList.add('alert-overlay--active', 'alert-overlay--' + this.priority);
+    el.classList.toggle('alert-overlay--no-dismiss', !this.dismissible);
 
     border.className = 'attention-border attention-border--active attention-border--' + this.priority;
   }
@@ -713,24 +725,37 @@ function showWeather({ temp, unit, condition, high, low, feelsLike, icon, nowPct
   currentInterrupt = { type: 'weather' };
 }
 
-function dismissInterrupt({ markTrashDone = false } = {}) {
+function dismissAlert() {
+  const dismissedType = currentAlert?.type || null;
+  currentAlert = null;
+
+  const el = document.getElementById('alert-overlay');
+  const border = document.querySelector('.attention-border');
+  const content = document.getElementById('alert-overlay-content');
+
+  el.classList.remove(
+    'alert-overlay--active',
+    'alert-overlay--no-dismiss',
+    'alert-overlay--urgent',
+    'alert-overlay--normal',
+    'alert-overlay--info',
+  );
+  el.style.removeProperty('--fullscreen-alert-icon-color');
+  border.className = 'attention-border';
+  content.innerHTML = '';
+
+  return dismissedType;
+}
+
+function dismissInterrupt() {
   const dismissedType = currentInterrupt?.type || null;
   currentInterrupt = null;
 
   const el = document.getElementById('interrupt');
-  const border = document.querySelector('.attention-border');
   const content = document.getElementById('interrupt-content');
   const dock = document.getElementById('dock');
 
-  el.classList.remove(
-    'interrupt--active',
-    'interrupt--no-dismiss',
-    'interrupt--urgent',
-    'interrupt--normal',
-    'interrupt--info',
-  );
-  el.style.removeProperty('--fullscreen-alert-icon-color');
-  border.className = 'attention-border';
+  el.classList.remove('interrupt--active', 'interrupt--no-dismiss');
   content.innerHTML = '';
   dock.classList.remove('dock--photo-mode');
   document.getElementById('dock-home-btn')?.classList.remove('is-active');
@@ -739,7 +764,6 @@ function dismissInterrupt({ markTrashDone = false } = {}) {
   if (photoCountdownInterval) clearInterval(photoCountdownInterval);
   document.getElementById('countdown-bar').style.display = 'none';
 
-  if (markTrashDone && dismissedType === 'trash') trashDismissedDate = getLocalDateKey();
   return dismissedType;
 }
 
@@ -1266,7 +1290,10 @@ async function handleSSEUpdate(eventType) {
   }
 
   if (eventType === 'ha-devices' || eventType === 'ha-scenes') renderDock();
-  if (eventType === 'display-override') scheduleNextDisplayEvent();
+  if (eventType === 'display-override') {
+    reconcileDisplay();
+    scheduleNextDisplayEvent();
+  }
 
   reconcileDisplay({ force: shouldForceCurrentScreen });
 }
@@ -1276,11 +1303,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   createAppLauncher();
   renderDock();
 
-  document.getElementById('interrupt-dismiss').addEventListener('click', () => {
-    const dismissedType = dismissInterrupt({ markTrashDone: true });
-    renderedScreen = null;
-    if (dismissedType === 'trash') reconcileDisplay({ force: true });
-    else displayScreen('photo', { force: true });
+  document.getElementById('alert-overlay-dismiss').addEventListener('click', () => {
+    const dismissedType = dismissAlert();
+    if (dismissedType === 'trash') trashDismissedDate = getLocalDateKey();
   });
 
   // Photo swipe navigation
