@@ -721,7 +721,7 @@ body {
   width: 56px;
   height: 56px;
   margin: 0 18px;
-  border: none;
+  border: 2px solid var(--icon-bg-on);
   border-radius: var(--radius-full);
   background: var(--icon-bg-off);
   cursor: pointer;
@@ -730,7 +730,6 @@ body {
   justify-content: center;
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
-  outline: none;
   transition: all 0.2s ease;
 }
 
