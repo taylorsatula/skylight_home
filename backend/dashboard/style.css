@@ -977,24 +977,19 @@ a.app-launcher__item {
 
 /* ============================================
    INTERRUPT: WEATHER
-   Big, centered, hourly temp bar
+   Insight-first layout — icon, condition, temp,
+   key insights list, low→high bar
    ============================================ */
 .weather-interrupt {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-2xl);
-}
-
-.weather-interrupt__header {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2xl);
+  gap: var(--spacing-md);
 }
 
 .weather-interrupt__icon {
-  width: 120px;
-  height: 120px;
+  width: 80px;
+  height: 80px;
   color: var(--color-warning);
 }
 
@@ -1010,6 +1005,12 @@ a.app-launcher__item {
   display: block;
 }
 
+.weather-interrupt__condition {
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .weather-interrupt__temp-group {
   display: flex;
   align-items: flex-start;
@@ -1017,53 +1018,51 @@ a.app-launcher__item {
 }
 
 .weather-interrupt__temp {
-  font-size: 160px;
+  font-size: 140px;
   font-weight: 200;
   line-height: 1;
-  letter-spacing: -6px;
+  letter-spacing: -5px;
 }
 
 .weather-interrupt__unit {
-  font-size: 42px;
+  font-size: 36px;
   font-weight: 300;
   color: var(--text-secondary);
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
-.weather-interrupt__info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  text-align: left;
+/* Insights list — the star of the show */
+.weather-interrupt__insights {
+  list-style: none;
+  padding: 0;
+  margin: var(--spacing-lg) 0;
+  text-align: center;
 }
 
-.weather-interrupt__condition {
-  font-size: 36px;
-  font-weight: 500;
-}
-
-.weather-interrupt__range {
-  font-size: 28px;
-  color: var(--text-secondary);
-}
-
-.weather-interrupt__range-high {
+.weather-interrupt__insights li {
+  font-size: 24px;
+  font-weight: 400;
   color: var(--text-primary);
-  font-weight: 500;
+  line-height: 1.5;
+  padding: 3px 0;
 }
 
-.weather-interrupt__feels-like {
-  font-size: 22px;
+.weather-interrupt__insights li + li::before {
+  content: '–';
+  display: block;
+  font-size: 14px;
   color: var(--text-muted);
+  margin-bottom: 2px;
 }
 
-/* 24h temp bar */
+/* Low → High bar */
 .weather-interrupt__hourly {
   display: flex;
   align-items: center;
   gap: var(--spacing-lg);
   width: 100%;
   max-width: 700px;
+  margin-top: var(--spacing-md);
 }
 
 .weather-interrupt__hourly-label {

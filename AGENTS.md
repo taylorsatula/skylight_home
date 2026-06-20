@@ -6,6 +6,7 @@ time-based schedule, with content stored in SQLite and pushed to the display via
 
 ## Deployment
 
+- **Pi address:** `192.168.1.9` · **SSH user:** `server_admin` (passwordless key auth)
 - **Backend:** FastAPI/Uvicorn on port **8894**, run as the systemd service
   `skylight-backend` (unit: `backend/skylight-backend.service`).
 - **Service user:** `server_admin` · **Working dir:** `/home/server_admin/backend`

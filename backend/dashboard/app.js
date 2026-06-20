@@ -223,11 +223,13 @@ function weatherIconForCode(code, isDay = true) {
 
 async function fetchWeather() {
   try {
-    // Owens Cross Roads, AL
+    // Owens Cross Roads, AL — fetch today through tomorrow with hourly data.
     const res = await fetch(
       'https://api.open-meteo.com/v1/forecast?latitude=34.2444&longitude=-86.7589'
-      + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,is_day'
-      + '&daily=temperature_2m_max,temperature_2m_min'
+      + '&forecast_days=3'
+      + '&current=temperature_2m,relative_humidity_2m,weather_code,is_day,uv_index'
+      + '&daily=temperature_2m_max,temperature_2m_min,uv_index_max,sunrise,sunset,precipitation_sum,precipitation_probability_max'
+      + '&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,weather_code,uv_index'
       + '&timezone=America%2FChicago&temperature_unit=fahrenheit',
       { cache: 'no-cache' },
     );
@@ -236,28 +238,189 @@ async function fetchWeather() {
     const data = await res.json();
     const c = data.current;
     const d = data.daily;
+    const h = data.hourly;
+    const times = h.time;
+
+    // Derive today's date from the API response (correct timezone), then get yesterday.
+    // This avoids relying on the Pi's system clock which may be in UTC.
+    const todayStr = c.time.slice(0, 10); // e.g. "2026-06-19"
+    const todayParts = todayStr.split('-').map(Number);
+    const yesterdayDate = new Date(todayParts[0], todayParts[1] - 1, todayParts[2] - 1);
+    const yesterdayStr = yesterdayDate.toISOString().slice(0, 10);
+
+    // Fetch yesterday's daily stats (lightweight — daily only)
+    let yesterdayDaily = null;
+    let yesterdayAvgHumidity = null;
+    try {
+      const yRes = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=34.2444&longitude=-86.7589`
+        + `&start_date=${yesterdayStr}&end_date=${yesterdayStr}`
+        + '&daily=temperature_2m_max,temperature_2m_min,uv_index_max,precipitation_probability_max'
+        + '&hourly=relative_humidity_2m'
+        + '&timezone=America%2FChicago&temperature_unit=fahrenheit',
+        { cache: 'no-cache' },
+      );
+      if (yRes.ok) {
+        const yData = await yRes.json();
+        const yd = yData.daily;
+        yesterdayDaily = {
+          high: Math.round(yd.temperature_2m_max[0]),
+          low: Math.round(yd.temperature_2m_min[0]),
+          uvMax: yd.uv_index_max?.[0],
+          precipProbMax: yd.precipitation_probability_max?.[0],
+        };
+        // Average daytime humidity (8am–6pm)
+        const yTimes = yData.hourly.time;
+        const yHumids = yData.hourly.relative_humidity_2m;
+        const samples = [];
+        for (let i = 0; i < yTimes.length; i++) {
+          if (yTimes[i] >= `${yesterdayStr}T08:00` && yTimes[i] <= `${yesterdayStr}T18:00`) {
+            samples.push(yHumids[i]);
+          }
+        }
+        yesterdayAvgHumidity = samples.length
+          ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length)
+          : null;
+      }
+    } catch (yErr) {
+      console.warn('Failed to fetch yesterday weather:', yErr);
+    }
+
+    // Daily indices: [0]=today, [1]=tomorrow
+    const todayDaily = {
+      high: Math.round(d.temperature_2m_max[0]),
+      low: Math.round(d.temperature_2m_min[0]),
+      uvMax: d.uv_index_max?.[0],
+      precipSum: d.precipitation_sum?.[0],
+      precipProbMax: d.precipitation_probability_max?.[0],
+      sunrise: d.sunrise?.[0],
+      sunset: d.sunset?.[0],
+    };
+    const tomorrowDaily = d.time[1] ? {
+      high: Math.round(d.temperature_2m_max[1]),
+      low: Math.round(d.temperature_2m_min[1]),
+      uvMax: d.uv_index_max?.[1],
+      precipProbMax: d.precipitation_probability_max?.[1],
+    } : null;
 
     const temp = Math.round(c.temperature_2m);
-    const high = Math.round(d.temperature_2m_max[0]);
-    const low = Math.round(d.temperature_2m_min[0]);
-    const range = high - low;
-    const nowPct = range > 0 ? Math.max(0, Math.min(100, Math.round((temp - low) / range * 100))) : 50;
+    const range = todayDaily.high - todayDaily.low;
+    const nowPct = range > 0 ? Math.max(0, Math.min(100, Math.round((temp - todayDaily.low) / range * 100))) : 50;
+
+    const insights = generateWeatherInsights({
+      currentTemp: temp,
+      currentHumidity: c.relative_humidity_2m,
+      currentUV: c.uv_index,
+      todayDaily,
+      yesterdayDaily,
+      tomorrowDaily,
+      yesterdayAvgHumidity,
+      hourlyTimes: times,
+      hourlyPrecipProb: h.precipitation_probability,
+      hourlyWeatherCode: h.weather_code,
+    });
 
     weatherData = {
       temp,
-      feelsLike: Math.round(c.apparent_temperature),
       condition: WMO_CODES[c.weather_code] || 'Unknown',
       icon: weatherIconForCode(c.weather_code, c.is_day === 1),
-      high,
-      low,
+      high: todayDaily.high,
+      low: todayDaily.low,
       unit: '°F',
       nowPct,
-      humidity: c.relative_humidity_2m,
-      windSpeed: Math.round(c.wind_speed_10m * 0.621371), // km/h → mph
+      insights,
     };
   } catch (err) {
     console.error('Fetch weather error:', err);
   }
+}
+
+// --- Weather Insight Engine ---
+// Structure: always show yesterday deltas first (even "same"), then actionable alerts.
+function generateWeatherInsights({
+  currentTemp, currentHumidity, currentUV,
+  todayDaily, yesterdayDaily, tomorrowDaily,
+  yesterdayAvgHumidity,
+  hourlyTimes, hourlyPrecipProb, hourlyWeatherCode,
+}) {
+  // Topic dedup: each insight claims a topic; first one wins.
+  const used = new Set();
+  const add = (text, topic) => { if (!used.has(topic)) { used.add(topic); insights.push(text); } };
+  const insights = [];
+
+  // — Yesterday comparisons (always shown) —
+  if (yesterdayDaily.high != null) {
+    const diff = todayDaily.high - yesterdayDaily.high;
+    if (diff >= 3) add(`${diff}° warmer than yesterday`, 'temp');
+    else if (diff <= -3) add(`${Math.abs(diff)}° cooler than yesterday`, 'temp');
+    else add('About the same temp as yesterday', 'temp');
+  }
+
+  if (currentHumidity != null && yesterdayAvgHumidity != null) {
+    const humDiff = currentHumidity - yesterdayAvgHumidity;
+    if (humDiff >= 10) add(`More humid (${currentHumidity}% vs ${yesterdayAvgHumidity}% yesterday)`, 'humidity');
+    else if (humDiff <= -10) add(`Less humid (${currentHumidity}% vs ${yesterdayAvgHumidity}% yesterday)`, 'humidity');
+    else add(`Similar humidity to yesterday (~${currentHumidity}%)`, 'humidity');
+  }
+
+  if (currentUV != null && yesterdayDaily.uvMax != null && todayDaily.uvMax != null) {
+    const uvDiff = todayDaily.uvMax - yesterdayDaily.uvMax;
+    if (uvDiff >= 2) add(`UV much higher today (max ${todayDaily.uvMax.toFixed(1)})`, 'uv');
+    else if (uvDiff <= -2) add(`Lower UV today (max ${todayDaily.uvMax.toFixed(1)})`, 'uv');
+    else add(`Similar UV to yesterday (max ${todayDaily.uvMax.toFixed(1)})`, 'uv');
+  }
+
+  // — Actionable alerts (only when notable) —
+  // Rain later today? Check remaining hours from now until sunset
+  const now = new Date();
+  const nowHour = now.getHours();
+  let rainLaterFound = false;
+  for (let i = 0; i < hourlyTimes.length; i++) {
+    const t = hourlyTimes[i];
+    const hourMatch = t.match(/T(\d{2}):/);
+    if (!hourMatch) continue;
+    const hour = parseInt(hourMatch[1], 10);
+    if (hour <= nowHour) continue;
+    if (hour > 21) break; // stop checking after 9pm
+    if (hourlyPrecipProb[i] >= 40) {
+      const ampm = hour >= 12 ? 'pm' : 'am';
+      const displayHour = hour > 12 ? hour - 12 : hour;
+      add(`Rain likely around ${displayHour}${ampm} (${hourlyPrecipProb[i]}%)`, 'precip');
+      rainLaterFound = true;
+      break;
+    }
+  }
+
+  // Thunderstorm coming in next few hours?
+  if (!rainLaterFound) {
+    for (let i = 0; i < hourlyTimes.length; i++) {
+      const t = hourlyTimes[i];
+      const hourMatch = t.match(/T(\d{2}):/);
+      if (!hourMatch) continue;
+      const hour = parseInt(hourMatch[1], 10);
+      if (hour <= nowHour || hour > nowHour + 6) continue;
+      if ([95, 96, 99].includes(hourlyWeatherCode[i])) {
+        add('Thunderstorm possible later', 'precip');
+        break;
+      }
+    }
+  }
+
+  // Extreme UV warning (deduped — won't fire if UV delta already claimed the topic)
+  if (currentUV >= 8) add('Extreme UV right now', 'uv');
+  else if (todayDaily.uvMax >= 8) add('Very high UV today', 'uv');
+
+  // — Tomorrow preview —
+  if (tomorrowDaily && tomorrowDaily.high != null) {
+    const tomDiff = tomorrowDaily.high - todayDaily.high;
+    if (tomDiff <= -5) add(`Big cooldown tomorrow (${tomorrowDaily.high}° high)`, 'temp-tomorrow');
+    else if (tomDiff >= 5) add(`Heating up tomorrow (${tomorrowDaily.high}° high)`, 'temp-tomorrow');
+    else if (tomorrowDaily.precipProbMax >= 40 && (todayDaily.precipProbMax || 0) < 20) {
+      add(`Rain moves in tomorrow (${tomorrowDaily.precipProbMax}% chance)`, 'precip-tomorrow');
+    }
+  }
+
+  return insights.slice(0, 5);
 }
 
 // --- Trash Night Interrupt ---
@@ -684,38 +847,32 @@ function showInterrupt(options) {
   new FullscreenAlert(options).show();
 }
 
-function showWeather({ temp, unit, condition, high, low, feelsLike, icon, nowPct }) {
+function showWeather({ temp, unit, condition, high, low, icon, nowPct, insights }) {
   const el = document.querySelector('.interrupt');
   const content = document.getElementById('interrupt-content');
 
-  // Single 24h bar: low on left, high on right, white dot for "now"
-  const barHTML = `
-    <div class="weather-interrupt__hourly">
-      <span class="weather-interrupt__hourly-label">${low}°</span>
-      <div class="weather-interrupt__bar-track">
-        <div class="weather-interrupt__bar-fill"></div>
-        <div class="weather-interrupt__bar-now" style="left:${nowPct || 35}%" title="${temp}° now"></div>
-      </div>
-      <span class="weather-interrupt__hourly-value">${high}°</span>
-    </div>
-  `;
+  const insightsHTML = (insights && insights.length)
+    ? `<ul class="weather-interrupt__insights">${insights.map(i => `<li>${i}</li>`).join('')}</ul>`
+    : '';
 
   content.innerHTML = `
     <div class="screen">
       <div class="weather-interrupt">
-        <div class="weather-interrupt__header">
-          <div class="weather-interrupt__icon">${icon || ICONS.sun}</div>
-          <div class="weather-interrupt__temp-group">
-            <span class="weather-interrupt__temp">${temp}</span>
-            <span class="weather-interrupt__unit">${unit || '°F'}</span>
-          </div>
-          <div class="weather-interrupt__info">
-            <span class="weather-interrupt__condition">${condition}</span>
-            <span class="weather-interrupt__range">H:<span class="weather-interrupt__range-high">${high}</span> L:${low}</span>
-            <span class="weather-interrupt__feels-like">Feels like ${feelsLike}°</span>
-          </div>
+        <div class="weather-interrupt__icon">${icon || ICONS.sun}</div>
+        <div class="weather-interrupt__condition">${condition}</div>
+        <div class="weather-interrupt__temp-group">
+          <span class="weather-interrupt__temp">${temp}</span>
+          <span class="weather-interrupt__unit">${unit || '°F'}</span>
         </div>
-        ${barHTML}
+        ${insightsHTML}
+        <div class="weather-interrupt__hourly">
+          <span class="weather-interrupt__hourly-label">${low}°</span>
+          <div class="weather-interrupt__bar-track">
+            <div class="weather-interrupt__bar-fill"></div>
+            <div class="weather-interrupt__bar-now" style="left:${nowPct || 35}%" title="${temp}° now"></div>
+          </div>
+          <span class="weather-interrupt__hourly-value">${high}°</span>
+        </div>
       </div>
     </div>
   `;
